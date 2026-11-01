@@ -1,0 +1,54 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0E0E10"><title>Vault Photos</title>
+<style>
+:root{--bg:#0E0E10;--card:#1B1B1F;--line:#2C2C31;--ink:#F4F1EA;--dim:#8A8A90;--gold:#C8A96A}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,sans-serif;padding:env(safe-area-inset-top) 0 90px}
+h1{font:400 30px/1.1 Georgia,serif;margin:0}button,input{font:inherit}
+.date{font-size:11px;letter-spacing:1px;color:var(--dim);text-transform:uppercase}
+header{display:flex;justify-content:space-between;align-items:flex-end;padding:16px 16px 12px}
+.av{width:34px;height:34px;border-radius:50%;background:var(--gold);color:var(--bg);border:0;font-weight:500}
+.day{padding:14px 16px 6px;font-weight:500}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:0 4px;grid-auto-flow:dense}
+.t{aspect-ratio:1;border-radius:14px;background:var(--card);overflow:hidden}.t:nth-child(7n+1){grid-column:span 2;grid-row:span 2}
+.t img,.t video{width:100%;height:100%;object-fit:cover;display:block}
+nav{position:fixed;left:50%;bottom:calc(14px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--card);border:.5px solid var(--line);border-radius:26px;padding:6px;display:flex;gap:4px}
+nav button{background:none;border:0;color:var(--dim);padding:8px 20px;border-radius:20px}nav .on{color:var(--gold);background:var(--bg)}
+.box{max-width:340px;margin:18vh auto;padding:0 20px}.box input{width:100%;margin:6px 0;padding:12px;border-radius:12px;border:.5px solid var(--line);background:var(--card);color:var(--ink)}
+.btn{width:100%;margin-top:8px;padding:12px;border-radius:12px;border:0;background:var(--gold);color:var(--bg);font-weight:500}.btn.g{background:var(--card);color:var(--ink)}
+.err{color:#F09595;min-height:22px;font-size:13px}.pad{padding:16px}.card{background:var(--card);border-radius:16px;padding:16px;margin-bottom:12px}
+#view{position:fixed;inset:0;background:#000;display:none;flex-direction:column;z-index:5}#view .bar{padding:calc(12px + env(safe-area-inset-top)) 16px;display:flex;justify-content:space-between}
+#view .bar *{color:var(--ink);background:none;border:0;font-size:15px;text-decoration:none}#view .m{flex:1;display:flex;align-items:center;justify-content:center;min-height:0}#view .m>*{max-width:100%;max-height:100%}
+#upd{display:none;background:var(--gold);color:var(--bg);padding:10px 16px;font-weight:500}#upd a{color:var(--bg)}
+</style></head><body>
+<div id="upd"></div>
+<div id="auth" class="box" hidden><h1>Vault Photos</h1><p class="date">Your photos, in your vault</p><div class="err" id="err"></div>
+<input id="u" placeholder="Username" autocapitalize="none"><input id="p" type="password" placeholder="Password">
+<button class="btn" id="li">Log in</button><button class="btn g" id="su">Create account</button></div>
+<div id="app" hidden>
+<header><div><div class="date" id="today"></div><h1>Photos</h1></div><button class="av" id="out" title="Log out"></button></header>
+<div id="pg"></div>
+<div id="bk" class="pad" hidden><div class="card"><div id="stat">Choose photos and videos to back up to your vault.</div></div>
+<label class="btn" style="display:block;text-align:center">Back up photos<input id="f" type="file" accept="image/*,video/*" multiple hidden></label></div>
+<nav><button class="on" data-p="pg">Photos</button><button data-p="bk">Backup</button></nav></div>
+<div id="view"><div class="bar"><button id="x">Close</button><a id="dl" target="_blank">Open original</a></div><div class="m" id="vm"></div></div>
+<script>
+const $=s=>document.querySelector(s);let T=localStorage.t;
+const api=(p,o={})=>fetch(p,{...o,headers:{Authorization:'Bearer '+T,...o.headers}});
+const src=n=>`/api/file?name=${encodeURIComponent(n)}&t=${T}`,vid=n=>/\.(mp4|mov|webm|mkv)$/i.test(n);
+$('#today').textContent=new Date().toLocaleDateString('en',{weekday:'long',day:'numeric',month:'short'});
+async function auth(m){const r=await fetch('/api/auth/'+m,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({u:$('#u').value,p:$('#p').value})}),j=await r.json();
+ if(!r.ok)return $('#err').textContent=j.error;T=localStorage.t=j.t;localStorage.u=j.u;start()}
+$('#li').onclick=()=>auth('login');$('#su').onclick=()=>auth('signup');
+$('#out').onclick=()=>{localStorage.clear();location.reload()};
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x==b));['pg','bk'].forEach(i=>$('#'+i).hidden=i!=b.dataset.p)});
+async function load(){const r=await api('/api/photos');if(r.status==401){localStorage.clear();return location.reload()}
+ const a=(await r.json()).sort().reverse(),days={};a.forEach(n=>{const d=new Date(+n.split('_')[0]).toDateString();(days[d]=days[d]||[]).push(n)});
+ $('#pg').innerHTML=a.length?Object.entries(days).map(([d,l])=>`<div class="day">${d}</div><div class="grid">${l.map(n=>`<div class="t" data-n="${n}">${vid(n)?`<video src="${src(n)}#t=0.1" preload="metadata" muted></video>`:`<img loading="lazy" src="${src(n)}">`}</div>`).join('')}</div>`).join(''):'<div class="pad card">No photos yet. Open Backup to add your first ones.</div>';
+ document.querySelectorAll('.t').forEach(t=>t.onclick=()=>{const n=t.dataset.n;$('#vm').innerHTML=vid(n)?`<video src="${src(n)}" controls autoplay></video>`:`<img src="${src(n)}">`;$('#dl').href=src(n);$('#view').style.display='flex'})}
+$('#x').onclick=()=>{$('#view').style.display='none';$('#vm').innerHTML=''};
+$('#f').onchange=async e=>{const fs=[...e.target.files];let i=0;for(const f of fs){$('#stat').textContent=`Backing up ${++i} of ${fs.length}…`;const d=new FormData();d.append('file',f);const r=await api('/api/upload',{method:'POST',body:d});if(!r.ok){$('#stat').textContent=`Couldn't back up ${f.name}. Try again.`;return}}
+ $('#stat').textContent=`${fs.length} backed up`;load()};
+async function checkVersion(){const A=window.Capacitor?.Plugins?.App;if(!A)return;try{const [i,v]=[await A.getInfo(),await (await fetch('/api/version')).json()];
+ if(+i.build<v.minNative){$('#upd').style.display='block';$('#upd').innerHTML=`New app version needed. <a href="${v.apk}">Download and reinstall</a>, then log in to get everything back.`}}catch{}}
+function start(){$('#auth').hidden=true;$('#app').hidden=false;$('#out').textContent=(localStorage.u||'?')[0].toUpperCase();load()}
+checkVersion();T?start():$('#auth').hidden=false;
+</script></body></html>
