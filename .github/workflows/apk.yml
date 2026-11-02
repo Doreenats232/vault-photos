@@ -18,6 +18,7 @@ jobs:
         run: |
           npm i
           npx cap add android
+          npx -y @capacitor/assets generate --android
           sed -i "s/versionCode 1/versionCode ${{ github.run_number }}/" android/app/build.gradle
           npx cap sync android
           cd android && ./gradlew assembleDebug
