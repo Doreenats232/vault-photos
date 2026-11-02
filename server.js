@@ -11,14 +11,15 @@ const sig = b => crypto.createHmac('sha256', SECRET).update(b).digest('base64url
 const mint = u => { const b = Buffer.from(u).toString('base64url'); return b + '.' + sig(b); };
 const check = (t = '') => { const [b, s] = t.split('.'); return b && s === sig(b) ? Buffer.from(b, 'base64url').toString() : null; };
 const auth = (q, r, n) => { const u = check((q.headers.authorization || '').slice(7) || q.query.t); u ? (q.u = u, n()) : r.sendStatus(401); };
-const put = (path, buf) => { const f = new FormData(); f.append('file', new Blob([buf]), path.split('/').pop()); f.append('dir', path.split('/').slice(0, -1).join('/')); return V('/v1/upload', { method: 'POST', body: f }); };
+const put = (name, buf) => { const f = new FormData(); f.append('file', new Blob([buf]), name); return V('/v1/upload', { method: 'POST', body: f }); };
+const items = j => (Array.isArray(j) ? j : Object.values(j || {}).find(Array.isArray) || []).map(x => typeof x === 'string' ? x : x.name || x.server_filename || x.path || '').map(x => x.split('/').pop()).filter(Boolean);
 const link = async path => (await (await V('/v1/fs/sign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, ttl: 600 }) })).json()).url;
 const hash = (p, s) => crypto.scryptSync(p, s, 32).toString('hex');
 
 app.post('/api/auth/:mode', async (q, r) => {
-  const u = String(q.body.u || '').toLowerCase().replace(/[^a-z0-9_]/g, ''), p = String(q.body.p || '');
+  const u = String(q.body.u || '').toLowerCase().replace(/[^a-z0-9]/g, ''), p = String(q.body.p || '');
   if (u.length < 3 || p.length < 6) return r.status(400).json({ error: 'Use a username of 3+ characters and a password of 6+.' });
-  const path = `users/${u}.json`; let rec = null;
+  const path = `__user__${u}.json`; let rec = null;
   try { const url = await link(path); if (url) { const x = await fetch(url); if (x.ok) rec = await x.json(); } } catch {}
   if (q.params.mode === 'signup') {
     if (rec) return r.status(409).json({ error: 'That username is taken.' });
@@ -29,20 +30,21 @@ app.post('/api/auth/:mode', async (q, r) => {
   r.json({ t: mint(u), u });
 });
 app.get('/api/photos', auth, async (q, r) => {
-  const j = await (await V(`/v1/fs/list?dir=users/${q.u}/photos`)).json().catch(() => []);
-  const a = Array.isArray(j) ? j : j.items || j.files || j.entries || [];
-  r.json(a.map(x => (x.name || x.path || '').split('/').pop()).filter(Boolean));
+  const j = await (await V('/v1/fs/list?dir=')).json().catch(() => []);
+  r.json(items(j).filter(n => n.startsWith(q.u + '__')).map(n => n.slice(q.u.length + 2)));
 });
 app.post('/api/upload', auth, up.single('file'), async (q, r) => {
   const name = `${Date.now()}_${q.file.originalname.replace(/[^\w.\-]/g, '_')}`;
-  const x = await put(`users/${q.u}/photos/${name}`, q.file.buffer);
-  r.status(x.ok ? 200 : 502).json({ name });
+  const x = await put(`${q.u}__${name}`, q.file.buffer);
+  if (!x.ok) return r.status(502).json({ error: 'Vault said ' + x.status + ': ' + (await x.text()).slice(0, 150) });
+  r.json({ name });
 });
 app.get('/api/file', auth, async (q, r) => {
   const n = String(q.query.name).replace(/[\/\\]/g, '');
-  r.redirect(await link(`users/${q.u}/photos/${n}`));
+  const url = await link(`${q.u}__${n}`);
+  url ? r.redirect(url) : r.sendStatus(404);
 });
-app.get('/api/health', async (q, r) => { const o = { VAULT_URL: !!VAULT_URL, VAULT_KEY: !!VAULT_KEY, SECRET: SECRET !== 'change-me' }; try { o.vault = (await V('/v1/fs/list?dir=')).status; } catch (e) { o.vault = String(e.message); } r.json(o); });
+app.get('/api/health', async (q, r) => { const o = { VAULT_URL: !!VAULT_URL, VAULT_KEY: !!VAULT_KEY, SECRET: SECRET !== 'change-me' }; try { const x = await V('/v1/fs/list?dir='); o.vault = x.status; const j = await x.json().catch(() => null); o.shape = Array.isArray(j) ? 'array:' + j.length : j && typeof j === 'object' ? Object.keys(j) : String(j); } catch (e) { o.vault = String(e.message); } r.json(o); });
 app.get('/api/version', (q, r) => r.json({ minNative: +MIN_NATIVE, apk: APK_URL }));
 app.use(express.static('public'));
 app.listen(PORT);
