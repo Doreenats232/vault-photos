@@ -4,6 +4,8 @@ import crypto from 'crypto';
 const { VAULT_URL, VAULT_KEY, SECRET = 'change-me', MIN_NATIVE = '1', APK_URL = '', PORT = 3000 } = process.env;
 const app = express(), up = multer({ storage: multer.memoryStorage(), limits: { fileSize: 60e6 } });
 app.use(express.json());
+process.on('unhandledRejection', e => console.error(e));
+for (const m of ['get', 'post']) { const o = app[m].bind(app); app[m] = (p, ...h) => o(p, ...h.map(f => f.constructor.name === 'AsyncFunction' ? (q, r, n) => f(q, r, n).catch(e => { console.error(e); r.status(500).json({ error: String(e.message || e) }); }) : f)); }
 const V = (p, o = {}) => fetch(VAULT_URL + p, { ...o, headers: { 'X-Api-Key': VAULT_KEY, ...o.headers } });
 const sig = b => crypto.createHmac('sha256', SECRET).update(b).digest('base64url');
 const mint = u => { const b = Buffer.from(u).toString('base64url'); return b + '.' + sig(b); };
@@ -21,7 +23,8 @@ app.post('/api/auth/:mode', async (q, r) => {
   if (q.params.mode === 'signup') {
     if (rec) return r.status(409).json({ error: 'That username is taken.' });
     const s = crypto.randomBytes(16).toString('hex');
-    await put(path, Buffer.from(JSON.stringify({ s, h: hash(p, s) })));
+    const w = await put(path, Buffer.from(JSON.stringify({ s, h: hash(p, s) })));
+    if (!w.ok) return r.status(502).json({ error: 'Vault rejected the save: ' + w.status + ' ' + (await w.text()).slice(0, 200) });
   } else if (!rec || hash(p, rec.s) !== rec.h) return r.status(401).json({ error: 'Wrong username or password.' });
   r.json({ t: mint(u), u });
 });
@@ -39,6 +42,7 @@ app.get('/api/file', auth, async (q, r) => {
   const n = String(q.query.name).replace(/[\/\\]/g, '');
   r.redirect(await link(`users/${q.u}/photos/${n}`));
 });
+app.get('/api/health', async (q, r) => { const o = { VAULT_URL: !!VAULT_URL, VAULT_KEY: !!VAULT_KEY, SECRET: SECRET !== 'change-me' }; try { o.vault = (await V('/v1/fs/list?dir=')).status; } catch (e) { o.vault = String(e.message); } r.json(o); });
 app.get('/api/version', (q, r) => r.json({ minNative: +MIN_NATIVE, apk: APK_URL }));
 app.use(express.static('public'));
 app.listen(PORT);

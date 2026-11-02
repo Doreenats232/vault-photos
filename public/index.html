@@ -35,7 +35,7 @@ const $=s=>document.querySelector(s);let T=localStorage.t;
 const api=(p,o={})=>fetch(p,{...o,headers:{Authorization:'Bearer '+T,...o.headers}});
 const src=n=>`/api/file?name=${encodeURIComponent(n)}&t=${T}`,vid=n=>/\.(mp4|mov|webm|mkv)$/i.test(n);
 $('#today').textContent=new Date().toLocaleDateString('en',{weekday:'long',day:'numeric',month:'short'});
-async function auth(m){const r=await fetch('/api/auth/'+m,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({u:$('#u').value,p:$('#p').value})}),j=await r.json();
+async function auth(m){const r=await fetch('/api/auth/'+m,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({u:$('#u').value,p:$('#p').value})}),j=await r.json().catch(()=>({error:'Server problem ('+r.status+'). It may be waking up, try again in a minute.'}));
  if(!r.ok)return $('#err').textContent=j.error;T=localStorage.t=j.t;localStorage.u=j.u;start()}
 $('#li').onclick=()=>auth('login');$('#su').onclick=()=>auth('signup');
 $('#out').onclick=()=>{localStorage.clear();location.reload()};
