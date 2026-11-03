@@ -13,7 +13,7 @@ const check = (t = '') => { const [b, s] = t.split('.'); return b && s === sig(b
 const auth = (q, r, n) => { const u = check((q.headers.authorization || '').slice(7) || q.query.t); u ? (q.u = u, n()) : r.sendStatus(401); };
 const put = (name, buf) => { const f = new FormData(); f.append('file', new Blob([buf]), name); return V('/v1/upload', { method: 'POST', body: f }); };
 const items = j => (Array.isArray(j) ? j : Object.values(j || {}).find(Array.isArray) || []).map(x => typeof x === 'string' ? x : x.name || x.server_filename || x.path || '').map(x => x.split('/').pop()).filter(Boolean);
-const link = async path => (await (await V('/v1/fs/sign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, ttl: 600 }) })).json()).url;
+const link = async (path, ttl = 600) => (await (await V('/v1/fs/sign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, ttl }) })).json()).url;
 const hash = (p, s) => crypto.scryptSync(p, s, 32).toString('hex');
 
 app.post('/api/auth/:mode', async (q, r) => {
@@ -31,7 +31,8 @@ app.post('/api/auth/:mode', async (q, r) => {
 });
 app.get('/api/photos', auth, async (q, r) => {
   const j = await (await V('/v1/fs/list?dir=')).json().catch(() => []);
-  r.json(items(j).filter(n => n.startsWith(q.u + '__')).map(n => n.slice(q.u.length + 2)));
+  const m = items(j).filter(n => n.startsWith(q.u + '__')).map(n => n.slice(q.u.length + 2));
+  r.json({ items: m.filter(n => !n.startsWith('fav__')), favs: m.filter(n => n.startsWith('fav__')).map(n => n.slice(5)) });
 });
 app.post('/api/upload', auth, up.single('file'), async (q, r) => {
   const name = `${Date.now()}_${q.file.originalname.replace(/[^\w.\-]/g, '_')}`;
@@ -44,6 +45,17 @@ app.get('/api/file', auth, async (q, r) => {
   const url = await link(`${q.u}__${n}`);
   url ? r.redirect(url) : r.sendStatus(404);
 });
+const nm = n => String(n).replace(/[\/\\]/g, '');
+const del = path => V('/v1/fs/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }) });
+app.post('/api/fav', auth, async (q, r) => {
+  for (const n of (q.body.names || []).map(nm)) { const p = `${q.u}__fav__${n}`, x = q.body.on ? await put(p, Buffer.from('1')) : await del(p); if (!x.ok) return r.status(502).json({ error: 'Vault said ' + x.status }); }
+  r.json({ ok: true });
+});
+app.post('/api/delete', auth, async (q, r) => {
+  for (const n of (q.body.names || []).map(nm)) { const x = await del(`${q.u}__${n}`); if (!x.ok) return r.status(502).json({ error: 'Vault said ' + x.status + ': ' + (await x.text()).slice(0, 150) }); await del(`${q.u}__fav__${n}`); }
+  r.json({ ok: true });
+});
+app.post('/api/share', auth, async (q, r) => { const url = await link(`${q.u}__${nm(q.body.name)}`, 86400); url ? r.json({ url }) : r.status(502).json({ error: 'Could not create link' }); });
 app.get('/api/health', async (q, r) => { const o = { VAULT_URL: !!VAULT_URL, VAULT_KEY: !!VAULT_KEY, SECRET: SECRET !== 'change-me' }; try { const x = await V('/v1/fs/list?dir='); o.vault = x.status; const j = await x.json().catch(() => null); o.shape = Array.isArray(j) ? 'array:' + j.length : j && typeof j === 'object' ? Object.keys(j) : String(j); } catch (e) { o.vault = String(e.message); } r.json(o); });
 app.get('/api/version', (q, r) => r.json({ minNative: +MIN_NATIVE, apk: APK_URL }));
 app.use(express.static('public'));

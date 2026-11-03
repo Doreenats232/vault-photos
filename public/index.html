@@ -1,52 +1,87 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0E0E10"><title>Vault Photos</title>
 <style>
-:root{--bg:#0E0E10;--card:#1B1B1F;--line:#2C2C31;--ink:#F4F1EA;--dim:#8A8A90;--gold:#C8A96A}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,sans-serif;padding:env(safe-area-inset-top) 0 90px}
-h1{font:400 30px/1.1 Georgia,serif;margin:0}button,input{font:inherit}
-.date{font-size:11px;letter-spacing:1px;color:var(--dim);text-transform:uppercase}
-header{display:flex;justify-content:space-between;align-items:flex-end;padding:16px 16px 12px}
-.av{width:34px;height:34px;border-radius:50%;background:var(--gold);color:var(--bg);border:0;font-weight:500}
-.day{padding:14px 16px 6px;font-weight:500}
-.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:0 4px;grid-auto-flow:dense}
-.t{aspect-ratio:1;border-radius:14px;background:var(--card);overflow:hidden}.t:nth-child(7n+1){grid-column:span 2;grid-row:span 2}
-.t img,.t video{width:100%;height:100%;object-fit:cover;display:block}
-nav{position:fixed;left:50%;bottom:calc(14px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--card);border:.5px solid var(--line);border-radius:26px;padding:6px;display:flex;gap:4px}
-nav button{background:none;border:0;color:var(--dim);padding:8px 20px;border-radius:20px}nav .on{color:var(--gold);background:var(--bg)}
-.box{max-width:340px;margin:18vh auto;padding:0 20px}.box input{width:100%;margin:6px 0;padding:12px;border-radius:12px;border:.5px solid var(--line);background:var(--card);color:var(--ink)}
-.btn{width:100%;margin-top:8px;padding:12px;border-radius:12px;border:0;background:var(--gold);color:var(--bg);font-weight:500}.btn.g{background:var(--card);color:var(--ink)}
-.err{color:#F09595;min-height:22px;font-size:13px}.pad{padding:16px}.card{background:var(--card);border-radius:16px;padding:16px;margin-bottom:12px}
-#view{position:fixed;inset:0;background:#000;display:none;flex-direction:column;z-index:5}#view .bar{padding:calc(12px + env(safe-area-inset-top)) 16px;display:flex;justify-content:space-between}
-#view .bar *{color:var(--ink);background:none;border:0;font-size:15px;text-decoration:none}#view .m{flex:1;display:flex;align-items:center;justify-content:center;min-height:0}#view .m>*{max-width:100%;max-height:100%}
+:root{--bg:#0E0E10;--side:#131316;--card:#1B1B1F;--line:#2C2C31;--ink:#F4F1EA;--dim:#8A8A90;--gold:#C8A96A;--h:112px}
+*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,sans-serif}button,input{font:inherit}
+#top{position:sticky;top:0;z-index:4;display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top)) 12px 10px;background:var(--bg)}
+.logo{display:none;font:400 21px Georgia,serif;white-space:nowrap}#q{flex:1;min-width:0;background:var(--card);border:0;border-radius:24px;padding:11px 18px;color:var(--ink)}
+.ib{width:38px;height:38px;border-radius:50%;border:0;background:var(--card);color:var(--ink);font-size:22px;line-height:1}.av{background:var(--gold);color:var(--bg);font-size:15px;font-weight:500}
+#side{display:none}#bn{position:fixed;bottom:0;left:0;right:0;z-index:4;display:flex;justify-content:space-around;background:var(--side);border-top:.5px solid var(--line);padding:6px 0 calc(6px + env(safe-area-inset-bottom))}
+#bn button{background:none;border:0;color:var(--dim);padding:8px 12px;font-size:12px}#bn .on{color:var(--gold)}main{padding-bottom:84px}
+.day{padding:14px 14px 6px;font-weight:500}.grid{display:flex;flex-wrap:wrap;gap:3px;padding:0 3px}.grid::after{content:'';flex-grow:1e6}
+.t{position:relative;height:var(--h);width:calc(var(--h)*var(--r,1));flex-grow:calc(var(--r,1)*100);border-radius:6px;background:var(--card);overflow:hidden;cursor:pointer;user-select:none;-webkit-user-select:none}
+.t img,.t video{width:100%;height:100%;object-fit:cover;display:block;transition:transform .12s}
+.ck{position:absolute;z-index:1;left:6px;top:6px;width:22px;height:22px;border-radius:50%;border:2px solid #fff;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;font-size:13px;color:#fff}
+.t:hover .ck,.sel .ck{display:flex}.sel .ck{background:var(--gold);border-color:var(--gold);color:var(--bg)}.sel img,.sel video{transform:scale(.88);border-radius:10px}.fv{position:absolute;right:7px;bottom:3px;color:var(--gold);text-shadow:0 0 4px #000}
+#mem{display:flex;gap:8px;padding:2px 12px 6px;overflow-x:auto}.mc{flex:0 0 210px;height:104px;border-radius:14px;background:var(--card) center/cover;padding:10px;display:flex;align-items:flex-end;cursor:pointer;font:16px Georgia,serif}.mc span{background:rgba(0,0,0,.5);padding:2px 9px;border-radius:9px}
+.pad{padding:16px}.card{background:var(--card);border-radius:16px;padding:16px;margin-bottom:12px}.dim{color:var(--dim);font-size:13px}
+.btn{display:block;width:100%;margin-top:8px;padding:12px;border-radius:12px;border:0;background:var(--gold);color:var(--bg);font-weight:500;text-align:center}.btn.g{background:var(--card);color:var(--ink)}
+.box{max-width:340px;margin:18vh auto;padding:0 20px}.box h1{font:400 30px Georgia,serif;margin:0}.box input{width:100%;margin:6px 0;padding:12px;border-radius:12px;border:.5px solid var(--line);background:var(--card);color:var(--ink)}
+.date{font-size:11px;letter-spacing:1px;color:var(--dim);text-transform:uppercase}.err{color:#F09595;min-height:22px;font-size:13px}
+#sel{position:fixed;top:0;left:0;right:0;z-index:7;background:var(--card);padding:calc(10px + env(safe-area-inset-top)) 12px 10px;display:flex;align-items:center;gap:4px}#sel b{flex:1;font-weight:500;padding-left:6px}#sel button{background:none;border:0;color:var(--ink);padding:8px 10px;border-radius:10px}
+#view{position:fixed;inset:0;background:#000;display:none;flex-direction:column;z-index:8}#view .bar{padding:calc(12px + env(safe-area-inset-top)) 12px 12px;display:flex;justify-content:space-between}#view .bar *{color:var(--ink);background:none;border:0;font-size:15px;text-decoration:none;padding:6px 10px}
+#view .m{flex:1;display:flex;align-items:center;justify-content:center;min-height:0}#view .m>*{max-width:100%;max-height:100%}
+#toast{position:fixed;left:50%;bottom:84px;transform:translateX(-50%);background:var(--card);border:.5px solid var(--line);padding:10px 16px;border-radius:12px;display:none;z-index:9;max-width:90vw}
 #upd{display:none;background:var(--gold);color:var(--bg);padding:10px 16px;font-weight:500}#upd a{color:var(--bg)}
+@media(min-width:900px){:root{--h:190px}#app:not([hidden]){display:grid;grid-template-columns:240px 1fr;grid-template-rows:auto 1fr}#top{grid-column:1/3}.logo{display:block;width:216px}#q{max-width:680px;flex:0 1 680px}#top .sp{flex:1}
+#side{display:block;padding:8px 12px 8px 0}#side button{display:block;width:100%;text-align:left;background:none;border:0;color:var(--ink);padding:13px 24px;border-radius:0 26px 26px 0;margin-bottom:2px}#side button:hover{background:var(--card)}#side .on{background:#3A331F;color:var(--gold)}
+#bn{display:none}main{padding-bottom:30px}#toast{bottom:24px}}
 </style></head><body>
 <div id="upd"></div>
 <div id="auth" class="box" hidden><h1>Vault Photos</h1><p class="date">Your photos, in your vault</p><div class="err" id="err"></div>
 <input id="u" placeholder="Username" autocapitalize="none"><input id="p" type="password" placeholder="Password">
 <button class="btn" id="li">Log in</button><button class="btn g" id="su">Create account</button></div>
 <div id="app" hidden>
-<header><div><div class="date" id="today"></div><h1>Photos</h1></div><button class="av" id="out" title="Log out"></button></header>
-<div id="pg"></div>
-<div id="bk" class="pad" hidden><div class="card"><div id="stat">Choose photos and videos to back up to your vault.</div></div>
-<label class="btn" style="display:block;text-align:center">Back up photos<input id="f" type="file" accept="image/*,video/*" multiple hidden></label></div>
-<nav><button class="on" data-p="pg">Photos</button><button data-p="bk">Backup</button></nav></div>
-<div id="view"><div class="bar"><button id="x">Close</button><a id="dl" target="_blank">Open original</a></div><div class="m" id="vm"></div></div>
+<div id="top"><span class="logo">Vault Photos</span><input id="q" placeholder="Search your photos"><span class="sp"></span><button class="ib" id="plus" title="Back up photos">+</button><button class="ib av" id="out" title="Log out"></button></div>
+<aside id="side"></aside>
+<main><div id="mem"></div><div id="pg"></div>
+<div id="bk" class="pad" hidden><div class="card"><b id="bc">0</b> items in your vault.<div class="dim">Auto-backup of new phone photos arrives with the app update.</div></div><button class="btn" id="bu">Back up photos and videos</button></div></main>
+<nav id="bn"></nav></div>
+<div id="sel" hidden><button id="sx">✕</button><b id="cnt"></b><button id="ss">Share</button><button id="sd">Download</button><button id="sf">★</button><button id="sr">Delete</button></div>
+<div id="view"><div class="bar"><button id="x">Close</button><span><button id="vf">☆</button><button id="vs">Share</button><a id="vo" target="_blank">Original</a></span></div><div class="m" id="vm"></div></div>
+<div id="toast"></div><input id="f" type="file" accept="image/*,video/*" multiple hidden>
 <script>
-const $=s=>document.querySelector(s);let T=localStorage.t;
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];let T=localStorage.t,items=[],favs=new Set(),view='all',qs='',sel=new Set(),cur=null;
 const api=(p,o={})=>fetch(p,{...o,headers:{Authorization:'Bearer '+T,...o.headers}});
-const src=n=>`/api/file?name=${encodeURIComponent(n)}&t=${T}`,vid=n=>/\.(mp4|mov|webm|mkv)$/i.test(n);
-$('#today').textContent=new Date().toLocaleDateString('en',{weekday:'long',day:'numeric',month:'short'});
+const post=(p,b)=>api(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+const src=n=>`/api/file?name=${encodeURIComponent(n)}&t=${T}`,vid=n=>/\.(mp4|mov|webm|mkv)$/i.test(n),ts=n=>new Date(+n.split('_')[0]);
+let tt;const toast=(m,keep)=>{const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(tt);if(!keep)tt=setTimeout(()=>t.style.display='none',3200)};
+const NAV=[['all','Photos'],['fav','Favorites'],['vid','Videos'],['bk','Backup']];
+$('#side').innerHTML=$('#bn').innerHTML=NAV.map(([v,l])=>`<button data-v="${v}">${l}</button>`).join('');
+$$('#side button,#bn button').forEach(b=>b.onclick=()=>{view=b.dataset.v;sel.clear();render();scrollTo(0,0)});
 async function auth(m){const r=await fetch('/api/auth/'+m,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({u:$('#u').value,p:$('#p').value})}),j=await r.json().catch(()=>({error:'Server problem ('+r.status+'). It may be waking up, try again in a minute.'}));
  if(!r.ok)return $('#err').textContent=j.error;T=localStorage.t=j.t;localStorage.u=j.u;start()}
-$('#li').onclick=()=>auth('login');$('#su').onclick=()=>auth('signup');
-$('#out').onclick=()=>{localStorage.clear();location.reload()};
-document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x==b));['pg','bk'].forEach(i=>$('#'+i).hidden=i!=b.dataset.p)});
-async function load(){const r=await api('/api/photos');if(r.status==401){localStorage.clear();return location.reload()}
- const a=(await r.json()).sort().reverse(),days={};a.forEach(n=>{const d=new Date(+n.split('_')[0]).toDateString();(days[d]=days[d]||[]).push(n)});
- $('#pg').innerHTML=a.length?Object.entries(days).map(([d,l])=>`<div class="day">${d}</div><div class="grid">${l.map(n=>`<div class="t" data-n="${n}">${vid(n)?`<video src="${src(n)}#t=0.1" preload="metadata" muted></video>`:`<img loading="lazy" src="${src(n)}">`}</div>`).join('')}</div>`).join(''):'<div class="pad card">No photos yet. Open Backup to add your first ones.</div>';
- document.querySelectorAll('.t').forEach(t=>t.onclick=()=>{const n=t.dataset.n;$('#vm').innerHTML=vid(n)?`<video src="${src(n)}" controls autoplay></video>`:`<img src="${src(n)}">`;$('#dl').href=src(n);$('#view').style.display='flex'})}
-$('#x').onclick=()=>{$('#view').style.display='none';$('#vm').innerHTML=''};
-$('#f').onchange=async e=>{const fs=[...e.target.files];let i=0;for(const f of fs){$('#stat').textContent=`Backing up ${++i} of ${fs.length}…`;const d=new FormData();d.append('file',f);const r=await api('/api/upload',{method:'POST',body:d});if(!r.ok){const j=await r.json().catch(()=>({}));$('#stat').textContent=`Couldn't back up ${f.name}: ${j.error||r.status}`;return}}
- $('#stat').textContent=`${fs.length} backed up`;load()};
+$('#li').onclick=()=>auth('login');$('#su').onclick=()=>auth('signup');$('#out').onclick=()=>{localStorage.clear();location.reload()};
+async function load(){const r=await api('/api/photos');if(r.status==401){localStorage.clear();return location.reload()}const j=await r.json();items=j.items;favs=new Set(j.favs);render()}
+const lab=d=>d==new Date().toDateString()?'Today':d==new Date(Date.now()-864e5).toDateString()?'Yesterday':d;
+function bar(){$('#sel').hidden=!sel.size;$('#cnt').textContent=sel.size+' selected'}
+function tog(n){sel.has(n)?sel.delete(n):sel.add(n);$$('.t').forEach(t=>t.classList.toggle('sel',sel.has(t.dataset.n)));bar()}
+function render(){
+ $$('#side button,#bn button').forEach(b=>b.classList.toggle('on',b.dataset.v==view));
+ $('#bk').hidden=view!='bk';$('#pg').hidden=view=='bk';$('#bc').textContent=items.length;bar();
+ if(view=='bk'){$('#mem').innerHTML='';return}
+ const q=qs.toLowerCase().trim();
+ const a=items.filter(n=>view=='fav'?favs.has(n):view=='vid'?vid(n):1).filter(n=>{if(!q)return 1;const d=ts(n);return(n.split('_').slice(1).join('_')+' '+d.toDateString()+' '+d.toLocaleDateString('en',{month:'long',year:'numeric'})+' '+(vid(n)?'video':'photo')).toLowerCase().includes(q)}).sort().reverse();
+ const days={};a.forEach(n=>{const d=ts(n).toDateString();(days[d]=days[d]||[]).push(n)});
+ $('#pg').innerHTML=a.length?Object.entries(days).map(([d,l])=>`<div class="day">${lab(d)}</div><div class="grid">${l.map(n=>`<div class="t${sel.has(n)?' sel':''}" data-n="${n}"><div class="ck">✓</div>${vid(n)?`<video src="${src(n)}#t=0.1" preload="metadata" muted></video>`:`<img loading="lazy" src="${src(n)}">`}${favs.has(n)?'<span class="fv">★</span>':''}</div>`).join('')}</div>`).join(''):`<div class="pad"><div class="card">${items.length?'Nothing matches here.':'No photos yet. Tap + to back up your first ones.'}</div></div>`;
+ $$('.t').forEach(t=>{const n=t.dataset.n,m=t.querySelector('img,video'),f=()=>{const w=m.videoWidth||m.naturalWidth,h=m.videoHeight||m.naturalHeight;if(w&&h)t.style.setProperty('--r',(w/h).toFixed(3))};
+  m.addEventListener(vid(n)?'loadedmetadata':'load',f);if(m.complete&&m.naturalWidth)f();
+  let h,lp=0;t.ontouchstart=()=>{lp=0;h=setTimeout(()=>{lp=1;tog(n)},450)};t.ontouchend=t.ontouchmove=()=>clearTimeout(h);
+  t.onclick=e=>{if(lp){lp=0;return}sel.size||e.target.closest('.ck')?tog(n):open(n)};t.oncontextmenu=e=>e.preventDefault()});
+ const t=new Date(),oy=items.filter(n=>{const d=ts(n);return d.getDate()==t.getDate()&&d.getMonth()==t.getMonth()&&d.getFullYear()<t.getFullYear()&&!vid(n)}).sort().reverse()[0],rc=items.filter(n=>!vid(n)).sort().reverse()[0];
+ $('#mem').innerHTML=view=='all'&&!q?[['On this day',oy],['Recently added',rc]].filter(c=>c[1]).map(([l,n])=>`<div class="mc" data-n="${n}" style="background-image:url(${src(n)})"><span>${l}</span></div>`).join(''):'';
+ $$('.mc').forEach(c=>c.onclick=()=>open(c.dataset.n))}
+function open(n){cur=n;$('#vm').innerHTML=vid(n)?`<video src="${src(n)}" controls autoplay></video>`:`<img src="${src(n)}">`;$('#vo').href=src(n);$('#vf').textContent=favs.has(n)?'★':'☆';$('#view').style.display='flex'}
+const close=()=>{cur=null;$('#view').style.display='none';$('#vm').innerHTML=''};$('#x').onclick=close;
+const fav=async ns=>{const on=!ns.every(n=>favs.has(n)),r=await post('/api/fav',{names:ns,on});if(!r.ok)return toast('Could not update favorites');ns.forEach(n=>on?favs.add(n):favs.delete(n));if(cur)$('#vf').textContent=favs.has(cur)?'★':'☆';render();toast(on?'Added to favorites':'Removed from favorites')};
+const del=async ns=>{if(!confirm(`Delete ${ns.length} item${ns.length>1?'s':''} forever?`))return;const r=await post('/api/delete',{names:ns});if(!r.ok)return toast((await r.json().catch(()=>({}))).error||'Delete failed');items=items.filter(n=>!ns.includes(n));sel.clear();close();render();toast('Deleted')};
+const share=async ns=>{const u=[];for(const n of ns){const r=await post('/api/share',{name:n}),j=await r.json().catch(()=>({}));if(!r.ok)return toast(j.error||'Share failed');u.push(j.url)}const t=u.join('\n');navigator.share?navigator.share({text:t}).catch(()=>{}):navigator.clipboard.writeText(t).then(()=>toast('Link copied (valid 24 hours)'))};
+const dl=ns=>ns.forEach((n,i)=>setTimeout(()=>{const a=document.createElement('a');a.href=src(n);a.download=n;a.click()},i*400));
+$('#sx').onclick=()=>{sel.clear();$$('.t').forEach(t=>t.classList.remove('sel'));bar()};$('#ss').onclick=()=>share([...sel]);$('#sd').onclick=()=>dl([...sel]);$('#sf').onclick=()=>fav([...sel]);$('#sr').onclick=()=>del([...sel]);
+$('#vf').onclick=()=>fav([cur]);$('#vs').onclick=()=>share([cur]);
+async function upload(fs){fs=[...fs].filter(f=>/^(image|video)\//.test(f.type));if(!fs.length)return;let i=0;for(const f of fs){toast(`Backing up ${++i} of ${fs.length}…`,1);const d=new FormData();d.append('file',f);const r=await api('/api/upload',{method:'POST',body:d});if(!r.ok){const j=await r.json().catch(()=>({}));return toast(`Couldn't back up ${f.name}: ${j.error||r.status}`)}}toast(`${fs.length} backed up`);load()}
+$('#plus').onclick=$('#bu').onclick=()=>$('#f').click();$('#f').onchange=e=>{upload(e.target.files);e.target.value=''};
+addEventListener('dragover',e=>e.preventDefault());addEventListener('drop',e=>{e.preventDefault();upload(e.dataTransfer.files)});
+let qt;$('#q').oninput=e=>{clearTimeout(qt);qt=setTimeout(()=>{qs=e.target.value;render()},200)};
 async function checkVersion(){const A=window.Capacitor?.Plugins?.App;if(!A)return;try{const [i,v]=[await A.getInfo(),await (await fetch('/api/version')).json()];
  if(+i.build<v.minNative){$('#upd').style.display='block';$('#upd').innerHTML=`New app version needed. <a href="${v.apk}">Download and reinstall</a>, then log in to get everything back.`}}catch{}}
 function start(){$('#auth').hidden=true;$('#app').hidden=false;$('#out').textContent=(localStorage.u||'?')[0].toUpperCase();load()}
