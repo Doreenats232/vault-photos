@@ -19,6 +19,10 @@ jobs:
           npm i
           npx cap add android
           npx -y @capacitor/assets generate --android
+          mkdir -p android/app/src/main/java/com/miles/vaultphotos
+          cp native/*.java android/app/src/main/java/com/miles/vaultphotos/
+          sed -i 's|</manifest>|<uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/><uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/><uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/><uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/></manifest>|' android/app/src/main/AndroidManifest.xml
+          sed -i "s|^dependencies {|dependencies {\n    implementation 'androidx.work:work-runtime:2.9.1'|" android/app/build.gradle
           sed -i "s/versionCode 1/versionCode ${{ github.run_number }}/" android/app/build.gradle
           npx cap sync android
           cd android && ./gradlew assembleDebug

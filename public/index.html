@@ -13,7 +13,7 @@
 .ck{position:absolute;z-index:1;left:6px;top:6px;width:22px;height:22px;border-radius:50%;border:2px solid #fff;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;font-size:13px;color:#fff}
 .t:hover .ck,.sel .ck{display:flex}.sel .ck{background:var(--gold);border-color:var(--gold);color:var(--bg)}.sel img,.sel video{transform:scale(.88);border-radius:10px}.fv{position:absolute;right:7px;bottom:3px;color:var(--gold);text-shadow:0 0 4px #000}
 #mem{display:flex;gap:8px;padding:2px 12px 6px;overflow-x:auto}.mc{flex:0 0 210px;height:104px;border-radius:14px;background:var(--card) center/cover;padding:10px;display:flex;align-items:flex-end;cursor:pointer;font:16px Georgia,serif}.mc span{background:rgba(0,0,0,.5);padding:2px 9px;border-radius:9px}
-.pad{padding:16px}.card{background:var(--card);border-radius:16px;padding:16px;margin-bottom:12px}.dim{color:var(--dim);font-size:13px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0}.pad{padding:16px}.card{background:var(--card);border-radius:16px;padding:16px;margin-bottom:12px}.dim{color:var(--dim);font-size:13px}
 .btn{display:block;width:100%;margin-top:8px;padding:12px;border-radius:12px;border:0;background:var(--gold);color:var(--bg);font-weight:500;text-align:center}.btn.g{background:var(--card);color:var(--ink)}
 .box{max-width:340px;margin:18vh auto;padding:0 20px}.box h1{font:400 30px Georgia,serif;margin:0}.box input{width:100%;margin:6px 0;padding:12px;border-radius:12px;border:.5px solid var(--line);background:var(--card);color:var(--ink)}
 .date{font-size:11px;letter-spacing:1px;color:var(--dim);text-transform:uppercase}.err{color:#F09595;min-height:22px;font-size:13px}
@@ -34,13 +34,13 @@
 <div id="top"><span class="logo">Vault Photos</span><input id="q" placeholder="Search your photos"><span class="sp"></span><button class="ib" id="plus" title="Back up photos">+</button><button class="ib av" id="out" title="Log out"></button></div>
 <aside id="side"></aside>
 <main><div id="mem"></div><div id="pg"></div>
-<div id="bk" class="pad" hidden><div class="card"><b id="bc">0</b> items in your vault.<div class="dim">Auto-backup of new phone photos arrives with the app update.</div></div><button class="btn" id="bu">Back up photos and videos</button></div></main>
+<div id="bk" class="pad" hidden><div class="card"><b id="bc">0</b> items in your vault.</div><div id="native" hidden><div class="card"><label class="row"><span>Auto-backup new photos and videos</span><input type="checkbox" id="ab"></label><label class="row"><span>Wi-Fi only</span><input type="checkbox" id="wf"></label><div class="dim" id="abs">Checks about every 15 minutes in the background.</div><button class="btn g" id="sn">Back up now</button></div><div class="card"><b>Back up apps</b><div id="apps" class="dim">Saves each app's APK file to your vault.</div><button class="btn g" id="la">Show my apps</button></div></div><div class="card" id="ba" hidden><b>Backed-up apps</b><div id="bal"></div></div><button class="btn" id="bu">Back up photos and videos</button></div></main>
 <nav id="bn"></nav></div>
 <div id="sel" hidden><button id="sx">✕</button><b id="cnt"></b><button id="ss">Share</button><button id="sd">Download</button><button id="sf">★</button><button id="sr">Delete</button></div>
 <div id="view"><div class="bar"><button id="x">Close</button><span><button id="vf">☆</button><button id="vs">Share</button><a id="vo" target="_blank">Original</a></span></div><div class="m" id="vm"></div></div>
 <div id="toast"></div><input id="f" type="file" accept="image/*,video/*" multiple hidden>
 <script>
-const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];let T=localStorage.t,items=[],favs=new Set(),view='all',qs='',sel=new Set(),cur=null;
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];let T=localStorage.t,items=[],apps=[],favs=new Set(),view='all',qs='',sel=new Set(),cur=null;
 const api=(p,o={})=>fetch(p,{...o,headers:{Authorization:'Bearer '+T,...o.headers}});
 const post=(p,b)=>api(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
 const src=n=>`/api/file?name=${encodeURIComponent(n)}&t=${T}`,vid=n=>/\.(mp4|mov|webm|mkv)$/i.test(n),ts=n=>new Date(+n.split('_')[0]);
@@ -50,14 +50,14 @@ $('#side').innerHTML=$('#bn').innerHTML=NAV.map(([v,l])=>`<button data-v="${v}">
 $$('#side button,#bn button').forEach(b=>b.onclick=()=>{view=b.dataset.v;sel.clear();render();scrollTo(0,0)});
 async function auth(m){const r=await fetch('/api/auth/'+m,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({u:$('#u').value,p:$('#p').value})}),j=await r.json().catch(()=>({error:'Server problem ('+r.status+'). It may be waking up, try again in a minute.'}));
  if(!r.ok)return $('#err').textContent=j.error;T=localStorage.t=j.t;localStorage.u=j.u;start()}
-$('#li').onclick=()=>auth('login');$('#su').onclick=()=>auth('signup');$('#out').onclick=()=>{localStorage.clear();location.reload()};
-async function load(){const r=await api('/api/photos');if(r.status==401){localStorage.clear();return location.reload()}const j=await r.json();items=j.items;favs=new Set(j.favs);render()}
+$('#li').onclick=()=>auth('login');$('#su').onclick=()=>auth('signup');$('#out').onclick=async()=>{try{await MS?.configure({url:'',token:'',on:false})}catch{}localStorage.clear();location.reload()};
+async function load(){const r=await api('/api/photos');if(r.status==401){localStorage.clear();return location.reload()}const j=await r.json();items=j.items;apps=j.apps||[];favs=new Set(j.favs);render()}
 const lab=d=>d==new Date().toDateString()?'Today':d==new Date(Date.now()-864e5).toDateString()?'Yesterday':d;
 function bar(){$('#sel').hidden=!sel.size;$('#cnt').textContent=sel.size+' selected'}
 function tog(n){sel.has(n)?sel.delete(n):sel.add(n);$$('.t').forEach(t=>t.classList.toggle('sel',sel.has(t.dataset.n)));bar()}
 function render(){
  $$('#side button,#bn button').forEach(b=>b.classList.toggle('on',b.dataset.v==view));
- $('#bk').hidden=view!='bk';$('#pg').hidden=view=='bk';$('#bc').textContent=items.length;bar();
+ $('#bk').hidden=view!='bk';$('#pg').hidden=view=='bk';$('#bc').textContent=items.length;$('#ba').hidden=!apps.length;$('#bal').innerHTML=apps.map(n=>`<div class="row"><span class="dim">${esc(n.replace(/^app__\d+_/,''))}</span><a href="${src(n)}" download style="color:var(--gold)">Download</a></div>`).join('');bar();
  if(view=='bk'){$('#mem').innerHTML='';return}
  const q=qs.toLowerCase().trim();
  const a=items.filter(n=>view=='fav'?favs.has(n):view=='vid'?vid(n):1).filter(n=>{if(!q)return 1;const d=ts(n);return(n.split('_').slice(1).join('_')+' '+d.toDateString()+' '+d.toLocaleDateString('en',{month:'long',year:'numeric'})+' '+(vid(n)?'video':'photo')).toLowerCase().includes(q)}).sort().reverse();
@@ -78,12 +78,19 @@ const share=async ns=>{const u=[];for(const n of ns){const r=await post('/api/sh
 const dl=ns=>ns.forEach((n,i)=>setTimeout(()=>{const a=document.createElement('a');a.href=src(n);a.download=n;a.click()},i*400));
 $('#sx').onclick=()=>{sel.clear();$$('.t').forEach(t=>t.classList.remove('sel'));bar()};$('#ss').onclick=()=>share([...sel]);$('#sd').onclick=()=>dl([...sel]);$('#sf').onclick=()=>fav([...sel]);$('#sr').onclick=()=>del([...sel]);
 $('#vf').onclick=()=>fav([cur]);$('#vs').onclick=()=>share([cur]);
-async function upload(fs){fs=[...fs].filter(f=>/^(image|video)\//.test(f.type));if(!fs.length)return;let i=0;for(const f of fs){toast(`Backing up ${++i} of ${fs.length}…`,1);const d=new FormData();d.append('file',f);const r=await api('/api/upload',{method:'POST',body:d});if(!r.ok){const j=await r.json().catch(()=>({}));return toast(`Couldn't back up ${f.name}: ${j.error||r.status}`)}}toast(`${fs.length} backed up`);load()}
+async function upload(fs){fs=[...fs].filter(f=>/^(image|video)\//.test(f.type));if(!fs.length)return;let i=0;for(const f of fs){toast(`Backing up ${++i} of ${fs.length}…`,1);const d=new FormData();d.append('taken',f.lastModified);d.append('file',f);const r=await api('/api/upload',{method:'POST',body:d});if(!r.ok){const j=await r.json().catch(()=>({}));return toast(`Couldn't back up ${f.name}: ${j.error||r.status}`)}}toast(`${fs.length} backed up`);load()}
 $('#plus').onclick=$('#bu').onclick=()=>$('#f').click();$('#f').onchange=e=>{upload(e.target.files);e.target.value=''};
 addEventListener('dragover',e=>e.preventDefault());addEventListener('drop',e=>{e.preventDefault();upload(e.dataTransfer.files)});
 let qt;$('#q').oninput=e=>{clearTimeout(qt);qt=setTimeout(()=>{qs=e.target.value;render()},200)};
+const MS=window.Capacitor?.Plugins?.MediaScan,esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const cfg=()=>MS.configure({url:location.origin,token:T,wifi:$('#wf').checked,on:$('#ab').checked});
+async function syncNow(){$('#abs').textContent='Backing up…';try{const r=await MS.syncNow();$('#abs').textContent=r.uploaded?`Backed up ${r.uploaded} new item${r.uploaded>1?'s':''}`:'Everything is backed up';load()}catch(e){$('#abs').textContent='Backup problem: '+(e.message||e)}}
+function native(){if(!MS)return;$('#native').hidden=false;$('#ab').checked=localStorage.ab=='1';$('#wf').checked=localStorage.wf!='0';if(localStorage.ab=='1')cfg().then(syncNow)}
+$('#ab').onchange=$('#wf').onchange=async()=>{localStorage.ab=$('#ab').checked?'1':'0';localStorage.wf=$('#wf').checked?'1':'0';await cfg();if($('#ab').checked)syncNow()};
+$('#sn').onclick=async()=>{await cfg();syncNow()};
+$('#la').onclick=async()=>{const {apps:l}=await MS.apps();$('#apps').innerHTML=l.sort((a,b)=>a.label.localeCompare(b.label)).map(a=>`<div class="row"><span>${esc(a.label)}<br><span class="dim">${(a.size/1e6).toFixed(0)} MB</span></span><button class="ib" data-p="${esc(a.pkg)}">↑</button></div>`).join('');$$('#apps button').forEach(b=>b.onclick=async()=>{b.textContent='…';try{await MS.backupApp({pkg:b.dataset.p});b.textContent='✓';load()}catch(e){b.textContent='!';toast(e.message||'Backup failed')}})};
 async function checkVersion(){const A=window.Capacitor?.Plugins?.App;if(!A)return;try{const [i,v]=[await A.getInfo(),await (await fetch('/api/version')).json()];
  if(+i.build<v.minNative){$('#upd').style.display='block';$('#upd').innerHTML=`New app version needed. <a href="${v.apk}">Download and reinstall</a>, then log in to get everything back.`}}catch{}}
-function start(){$('#auth').hidden=true;$('#app').hidden=false;$('#out').textContent=(localStorage.u||'?')[0].toUpperCase();load()}
+function start(){$('#auth').hidden=true;$('#app').hidden=false;$('#out').textContent=(localStorage.u||'?')[0].toUpperCase();load();native()}
 checkVersion();T?start():$('#auth').hidden=false;
 </script></body></html>

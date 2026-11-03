@@ -2,7 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import crypto from 'crypto';
 const { VAULT_URL, VAULT_KEY, SECRET = 'change-me', MIN_NATIVE = '1', APK_URL = '', PORT = 3000 } = process.env;
-const app = express(), up = multer({ storage: multer.memoryStorage(), limits: { fileSize: 60e6 } });
+const app = express(), up = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100e6 } });
 app.use(express.json());
 process.on('unhandledRejection', e => console.error(e));
 for (const m of ['get', 'post']) { const o = app[m].bind(app); app[m] = (p, ...h) => o(p, ...h.map(f => f.constructor.name === 'AsyncFunction' ? (q, r, n) => f(q, r, n).catch(e => { console.error(e); r.status(500).json({ error: String(e.message || e) }); }) : f)); }
@@ -32,11 +32,11 @@ app.post('/api/auth/:mode', async (q, r) => {
 app.get('/api/photos', auth, async (q, r) => {
   const j = await (await V('/v1/fs/list?dir=')).json().catch(() => []);
   const m = items(j).filter(n => n.startsWith(q.u + '__')).map(n => n.slice(q.u.length + 2));
-  r.json({ items: m.filter(n => !n.startsWith('fav__')), favs: m.filter(n => n.startsWith('fav__')).map(n => n.slice(5)) });
+  r.json({ items: m.filter(n => !/^(fav|app)__/.test(n)), apps: m.filter(n => n.startsWith('app__')), favs: m.filter(n => n.startsWith('fav__')).map(n => n.slice(5)) });
 });
 app.post('/api/upload', auth, up.single('file'), async (q, r) => {
-  const name = `${Date.now()}_${q.file.originalname.replace(/[^\w.\-]/g, '_')}`;
-  const x = await put(`${q.u}__${name}`, q.file.buffer);
+  const taken = +q.body.taken > 0 ? +q.body.taken : Date.now(), name = `${taken}_${q.file.originalname.replace(/[^\w.\-]/g, '_')}`;
+  const x = await put(`${q.u}__${q.body.kind === 'app' ? 'app__' : ''}${name}`, q.file.buffer);
   if (!x.ok) return r.status(502).json({ error: 'Vault said ' + x.status + ': ' + (await x.text()).slice(0, 150) });
   r.json({ name });
 });
