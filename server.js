@@ -34,7 +34,8 @@ app.post('/api/auth/:mode', async (q, r) => {
   r.json({ t: mint(u), u });
 });
 app.get('/api/photos', auth, async (q, r) => {
-  const j = await (await V('/v1/fs/list?dir=')).json().catch(() => []);
+  const lx = await V('/v1/fs/list?dir='), j = await lx.json().catch(() => null);
+  if (!lx.ok || j === null) return r.status(503).json({ error: 'The vault is not answering right now (it may be blocking requests). Your photos are safe. Try again in a few minutes.' });
   const m = items(j).filter(n => n.startsWith(q.u + '__')).map(n => n.slice(q.u.length + 2));
   const trash = m.map(n => /^tr__(\d+)__(.+)$/.exec(n)).filter(Boolean).map(x => ({ n: x[2], at: +x[1] })), albums = {};
   m.forEach(n => { const x = /^al__(.+?)__(.+)$/.exec(n); if (x) (albums[x[1]] = albums[x[1]] || []).push(x[2]); });
@@ -102,7 +103,7 @@ app.get('/api/backfill', auth, async (q, r) => {
   for (const n of miss.slice(0, 2)) { try { const b = Buffer.from(await (await fetch(await link(`${q.u}__${n}`))).arrayBuffer()); await put(`${q.u}__th__${n}`, await thumb(b)); done.push(n); } catch (e) { bad.add(q.u + n); } }
   r.json({ done, left: miss.length - done.length });
 });
-app.get('/api/health', async (q, r) => { const o = { VAULT_URL: !!VAULT_URL, VAULT_KEY: !!VAULT_KEY, SECRET: SECRET !== 'change-me' }; try { const x = await V('/v1/fs/list?dir='); o.vault = x.status; const j = await x.json().catch(() => null); o.shape = Array.isArray(j) ? 'array:' + j.length : j && typeof j === 'object' ? Object.keys(j) : String(j); } catch (e) { o.vault = String(e.message); } r.json(o); });
+app.get('/api/health', async (q, r) => { const o = { VAULT_URL: !!VAULT_URL, VAULT_KEY: !!VAULT_KEY, SECRET: SECRET !== 'change-me' }; try { const x = await V('/v1/fs/list?dir='); o.vault = x.status; const j = await x.json().catch(() => null); o.shape = Array.isArray(j) ? 'array:' + j.length : j && typeof j === 'object' ? Object.keys(j) : String(j); o.count = items(j).length; } catch (e) { o.vault = String(e.message); } r.json(o); });
 app.get('/api/version', (q, r) => r.json({ minNative: +MIN_NATIVE, apk: APK_URL }));
 app.use(express.static('public'));
 app.listen(PORT);
