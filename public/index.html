@@ -96,7 +96,7 @@ const sheet=h=>{$('#sheet>div').innerHTML=h;$('#sheet').style.display='flex'};$(
 function pickAlbum(ns){sheet(`<b>Add to album</b>${Object.keys(albs).map(k=>`<button class="btn g" data-k="${esc(k)}">${esc(k)}</button>`).join('')}<input id="na" placeholder="New album name"><button class="btn" id="nb">Create and add</button>`);
  const add=async k=>{k=k.trim().replace(/[^\w\- ]+/g,'').replace(/_+/g,'_').replace(/ +/g,'-').slice(0,40);if(!k)return;const r=await post('/api/album',{names:ns,album:k,on:true});$('#sheet').style.display='none';if(!r.ok)return toast('Could not add to album');albs[k]=albs[k]||[];ns.forEach(n=>{if(!albs[k].includes(n))albs[k].push(n)});sel.clear();render();toast('Added to '+k)};
  $$('#sheet [data-k]').forEach(b=>b.onclick=()=>add(b.dataset.k));$('#nb').onclick=()=>add($('#na').value)}
-let bf=0;async function backfill(){if(bf)return;if(!items.some(n=>!vid(n)&&!ths.has(n)&&IMG_.test(n)))return;bf=1;try{while(1){const r=await api('/api/backfill');if(!r.ok)break;const j=await r.json();j.done.forEach(n=>ths.add(n));if(!j.left||!j.done.length)break;if(view=='all')render()}}catch{}bf=0;render()}
+let bf=0;async function backfill(){if(bf)return;if(!items.some(n=>!vid(n)&&!ths.has(n)&&IMG_.test(n)))return;bf=1;try{for(let c=0;c<10;c++){await new Promise(z=>setTimeout(z,3000));const r=await api('/api/backfill');if(!r.ok)break;const j=await r.json();j.done.forEach(n=>ths.add(n));if(!j.left||!j.done.length)break;if(view=='all')render()}}catch{}bf=0;render()}
 const IMG_=/\.(jpe?g|png|webp|gif|bmp|avif|tiff?)$/i;
 const go=d=>{if(!cur)return;const i=vl.indexOf(cur)+d;if(i>=0&&i<vl.length)open(vl[i])};
 addEventListener('keydown',e=>{if(!cur)return;if(e.key=='ArrowRight')go(1);if(e.key=='ArrowLeft')go(-1);if(e.key=='Escape')close()});

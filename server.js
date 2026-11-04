@@ -12,7 +12,8 @@ const sig = b => crypto.createHmac('sha256', SECRET).update(b).digest('base64url
 const mint = u => { const b = Buffer.from(u).toString('base64url'); return b + '.' + sig(b); };
 const check = (t = '') => { const [b, s] = t.split('.'); return b && s === sig(b) ? Buffer.from(b, 'base64url').toString() : null; };
 const auth = (q, r, n) => { const u = check((q.headers.authorization || '').slice(7) || q.query.t); u ? (q.u = u, n()) : r.sendStatus(401); };
-const put = (name, buf) => { const f = new FormData(); f.append('file', new Blob([buf]), name); return V('/v1/upload', { method: 'POST', body: f }); };
+let cool = 0;
+const put = async (name, buf, tries = 3) => { for (let i = 0; ; i++) { const f = new FormData(); f.append('file', new Blob([buf]), name); const x = await V('/v1/upload', { method: 'POST', body: f }); if (x.status === 429) cool = Date.now() + 300000; if ((x.status !== 429 && x.status < 500) || i >= tries - 1) return x; await new Promise(z => setTimeout(z, +(process.env.RETRY_MS || 2000) * (i + 1))); } };
 const items = j => (Array.isArray(j) ? j : Object.values(j || {}).find(Array.isArray) || []).map(x => typeof x === 'string' ? x : x.name || x.server_filename || x.path || '').map(x => x.split('/').pop()).filter(Boolean);
 const link = async (path, ttl = 600) => (await (await V('/v1/fs/sign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, ttl }) })).json()).url;
 const hash = (p, s) => crypto.scryptSync(p, s, 32).toString('hex');
@@ -26,7 +27,7 @@ app.post('/api/auth/:mode', async (q, r) => {
     if (rec) return r.status(409).json({ error: 'That username is taken.' });
     const s = crypto.randomBytes(16).toString('hex');
     const w = await put(path, Buffer.from(JSON.stringify({ s, h: hash(p, s) })));
-    if (!w.ok) return r.status(502).json({ error: 'Vault rejected the save: ' + w.status + ' ' + (await w.text()).slice(0, 200) });
+    if (!w.ok) return r.status(502).json({ error: w.status === 429 ? 'The storage service is rate-limiting right now. Wait a few minutes and try again.' : 'Vault rejected the save: ' + w.status + ' ' + (await w.text()).slice(0, 120) });
   } else if (!rec || hash(p, rec.s) !== rec.h) return r.status(401).json({ error: 'Wrong username or password.' });
   r.json({ t: mint(u), u });
 });
@@ -42,7 +43,7 @@ app.post('/api/upload', auth, up.single('file'), async (q, r) => {
   const taken = +q.body.taken > 0 ? +q.body.taken : Date.now(), name = q.body.kind === 'lock' ? q.file.originalname.replace(/[^\w.\-]/g, '_') : `${taken}_${q.file.originalname.replace(/[^\w.\-]/g, '_')}`;
   const x = await put(`${q.u}__${({ app: 'app__', lock: 'lk__' })[q.body.kind] || ''}${name}`, q.file.buffer);
   if (!x.ok) return r.status(502).json({ error: 'Vault said ' + x.status + ': ' + (await x.text()).slice(0, 150) });
-  if (!q.body.kind && IMG.test(name)) try { await put(`${q.u}__th__${name}`, await thumb(q.file.buffer)); } catch (e) { console.error('thumb', e.message); }
+  if (!q.body.kind && IMG.test(name) && Date.now() > cool) try { await put(`${q.u}__th__${name}`, await thumb(q.file.buffer)); } catch (e) { console.error('thumb', e.message); }
   r.json({ name });
 });
 app.get('/api/file', auth, async (q, r) => {
@@ -93,9 +94,10 @@ app.get('/api/pin', auth, async (q, r) => { try { const url = await link(`__pin_
 app.post('/api/pin', auth, async (q, r) => { const url = await link(`__pin__${q.u}.json`).catch(() => null); if (url && (await fetch(url).catch(() => ({ ok: false }))).ok) return r.status(409).json({ error: 'PIN already set' }); const w = await put(`__pin__${q.u}.json`, Buffer.from(JSON.stringify({ salt: String(q.body.salt), check: String(q.body.check) }))); r.status(w.ok ? 200 : 502).json({ ok: w.ok }); });
 app.get('/api/usage', auth, async (q, r) => r.json(await (await V('/v1/fs/usage')).json().catch(() => ({}))));
 app.get('/api/backfill', auth, async (q, r) => {
+  if (Date.now() < cool) return r.json({ done: [], left: 0 });
   const m = (await ls()).filter(n => n.startsWith(q.u + '__')).map(n => n.slice(q.u.length + 2)), have = new Set(m.filter(n => n.startsWith('th__')).map(n => n.slice(4)));
   const miss = m.filter(n => IMG.test(n) && !/^(fav|app|th|tr|al|lk)__/.test(n) && !have.has(n) && !bad.has(q.u + n)), done = [];
-  for (const n of miss.slice(0, 5)) { try { const b = Buffer.from(await (await fetch(await link(`${q.u}__${n}`))).arrayBuffer()); await put(`${q.u}__th__${n}`, await thumb(b)); done.push(n); } catch (e) { bad.add(q.u + n); } }
+  for (const n of miss.slice(0, 2)) { try { const b = Buffer.from(await (await fetch(await link(`${q.u}__${n}`))).arrayBuffer()); await put(`${q.u}__th__${n}`, await thumb(b)); done.push(n); } catch (e) { bad.add(q.u + n); } }
   r.json({ done, left: miss.length - done.length });
 });
 app.get('/api/health', async (q, r) => { const o = { VAULT_URL: !!VAULT_URL, VAULT_KEY: !!VAULT_KEY, SECRET: SECRET !== 'change-me' }; try { const x = await V('/v1/fs/list?dir='); o.vault = x.status; const j = await x.json().catch(() => null); o.shape = Array.isArray(j) ? 'array:' + j.length : j && typeof j === 'object' ? Object.keys(j) : String(j); } catch (e) { o.vault = String(e.message); } r.json(o); });
