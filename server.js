@@ -1,5 +1,6 @@
 import express from 'express';
 import multer from 'multer';
+const sharp = await import('sharp').then(m => m.default).catch(() => null);
 import crypto from 'crypto';
 const { VAULT_URL, VAULT_KEY, SECRET = 'change-me', MIN_NATIVE = '1', APK_URL = '', PORT = 3000 } = process.env;
 const app = express(), up = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100e6 } });
@@ -32,12 +33,16 @@ app.post('/api/auth/:mode', async (q, r) => {
 app.get('/api/photos', auth, async (q, r) => {
   const j = await (await V('/v1/fs/list?dir=')).json().catch(() => []);
   const m = items(j).filter(n => n.startsWith(q.u + '__')).map(n => n.slice(q.u.length + 2));
-  r.json({ items: m.filter(n => !/^(fav|app)__/.test(n)), apps: m.filter(n => n.startsWith('app__')), favs: m.filter(n => n.startsWith('fav__')).map(n => n.slice(5)) });
+  const trash = m.map(n => /^tr__(\d+)__(.+)$/.exec(n)).filter(Boolean).map(x => ({ n: x[2], at: +x[1] })), albums = {};
+  m.forEach(n => { const x = /^al__(.+?)__(.+)$/.exec(n); if (x) (albums[x[1]] = albums[x[1]] || []).push(x[2]); });
+  r.json({ items: m.filter(n => !/^(fav|app|th|tr|al)__/.test(n)), apps: m.filter(n => n.startsWith('app__')), favs: m.filter(n => n.startsWith('fav__')).map(n => n.slice(5)), th: m.filter(n => n.startsWith('th__')).map(n => n.slice(4)), trash, albums });
+  trash.filter(t => t.at < Date.now() - 30 * 864e5).forEach(t => del(`${q.u}__${t.n}`).then(() => purgeAll(q.u, t.n, m)).catch(() => {}));
 });
 app.post('/api/upload', auth, up.single('file'), async (q, r) => {
   const taken = +q.body.taken > 0 ? +q.body.taken : Date.now(), name = `${taken}_${q.file.originalname.replace(/[^\w.\-]/g, '_')}`;
   const x = await put(`${q.u}__${q.body.kind === 'app' ? 'app__' : ''}${name}`, q.file.buffer);
   if (!x.ok) return r.status(502).json({ error: 'Vault said ' + x.status + ': ' + (await x.text()).slice(0, 150) });
+  if (q.body.kind !== 'app' && IMG.test(name)) try { await put(`${q.u}__th__${name}`, await thumb(q.file.buffer)); } catch (e) { console.error('thumb', e.message); }
   r.json({ name });
 });
 app.get('/api/file', auth, async (q, r) => {
@@ -52,10 +57,35 @@ app.post('/api/fav', auth, async (q, r) => {
   r.json({ ok: true });
 });
 app.post('/api/delete', auth, async (q, r) => {
-  for (const n of (q.body.names || []).map(nm)) { const x = await del(`${q.u}__${n}`); if (!x.ok) return r.status(502).json({ error: 'Vault said ' + x.status + ': ' + (await x.text()).slice(0, 150) }); await del(`${q.u}__fav__${n}`); }
+  const m = (await ls()).filter(n => n.startsWith(q.u + '__')).map(n => n.slice(q.u.length + 2));
+  for (const n of (q.body.names || []).map(nm)) { const x = await del(`${q.u}__${n}`); if (!x.ok) return r.status(502).json({ error: 'Vault said ' + x.status + ': ' + (await x.text()).slice(0, 150) }); await purgeAll(q.u, n, m); }
   r.json({ ok: true });
 });
 app.post('/api/share', auth, async (q, r) => { const url = await link(`${q.u}__${nm(q.body.name)}`, 86400); url ? r.json({ url }) : r.status(502).json({ error: 'Could not create link' }); });
+const IMG = /\.(jpe?g|png|webp|gif|bmp|avif|tiff?)$/i, bad = new Set();
+const thumb = async b => { if (!sharp) throw new Error('sharp unavailable'); return sharp(b).rotate().resize(480, 480, { fit: 'inside' }).jpeg({ quality: 72 }).toBuffer(); };
+const ls = async () => items(await (await V('/v1/fs/list?dir=')).json().catch(() => []));
+const purgeAll = async (u, n, m) => { for (const p of ['th__' + n, 'fav__' + n, ...m.filter(x => /^(tr|al)__/.test(x) && x.endsWith('__' + n))]) await del(`${u}__${p}`); };
+const albName = s => String(s).replace(/[^\w\- ]+/g, '').replace(/_+/g, '_').replace(/ +/g, '-').slice(0, 40);
+app.post('/api/trash', auth, async (q, r) => {
+  const m = (await ls()).filter(n => n.startsWith(q.u + '__')).map(n => n.slice(q.u.length + 2));
+  for (const n of (q.body.names || []).map(nm)) {
+    if (q.body.on) { const x = await put(`${q.u}__tr__${Date.now()}__${n}`, Buffer.from('1')); if (!x.ok) return r.status(502).json({ error: 'Vault said ' + x.status }); }
+    else for (const k of m.filter(k => /^tr__\d+__/.test(k) && k.endsWith('__' + n))) await del(`${q.u}__${k}`);
+  }
+  r.json({ ok: true });
+});
+app.post('/api/album', auth, async (q, r) => {
+  const a = albName(q.body.album); if (!a) return r.status(400).json({ error: 'Name the album' });
+  for (const n of (q.body.names || []).map(nm)) { const p = `${q.u}__al__${a}__${n}`, x = q.body.on ? await put(p, Buffer.from('1')) : await del(p); if (!x.ok) return r.status(502).json({ error: 'Vault said ' + x.status }); }
+  r.json({ ok: true });
+});
+app.get('/api/backfill', auth, async (q, r) => {
+  const m = (await ls()).filter(n => n.startsWith(q.u + '__')).map(n => n.slice(q.u.length + 2)), have = new Set(m.filter(n => n.startsWith('th__')).map(n => n.slice(4)));
+  const miss = m.filter(n => IMG.test(n) && !/^(fav|app|th|tr|al)__/.test(n) && !have.has(n) && !bad.has(q.u + n)), done = [];
+  for (const n of miss.slice(0, 5)) { try { const b = Buffer.from(await (await fetch(await link(`${q.u}__${n}`))).arrayBuffer()); await put(`${q.u}__th__${n}`, await thumb(b)); done.push(n); } catch (e) { bad.add(q.u + n); } }
+  r.json({ done, left: miss.length - done.length });
+});
 app.get('/api/health', async (q, r) => { const o = { VAULT_URL: !!VAULT_URL, VAULT_KEY: !!VAULT_KEY, SECRET: SECRET !== 'change-me' }; try { const x = await V('/v1/fs/list?dir='); o.vault = x.status; const j = await x.json().catch(() => null); o.shape = Array.isArray(j) ? 'array:' + j.length : j && typeof j === 'object' ? Object.keys(j) : String(j); } catch (e) { o.vault = String(e.message); } r.json(o); });
 app.get('/api/version', (q, r) => r.json({ minNative: +MIN_NATIVE, apk: APK_URL }));
 app.use(express.static('public'));
