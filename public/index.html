@@ -44,10 +44,10 @@
 <div id="view"><div class="bar"><button id="x">Close</button><span><button id="vf">☆</button><button id="vs">Share</button><button id="vt">Trash</button><a id="vo" target="_blank">Original</a></span></div><div class="m" id="vm"></div><button class="nv l" id="vp">‹</button><button class="nv r" id="vn">›</button></div>
 <div id="toast"></div><div id="sheet"><div></div></div><input id="f" type="file" accept="image/*,video/*" multiple hidden>
 <script>
-const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];let T=localStorage.t,items=[],apps=[],locked=[],lth=new Set(),LK=null,lkOpen=null,usage=null,ths=new Set(),trash=new Map(),albs={},alb=null,vl=[],sc=1,tx=0,ty=0,favs=new Set(),view='all',qs='',sel=new Set(),cur=null;
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];let T=localStorage.k||'local',times={},items=[],apps=[],locked=[],lth=new Set(),LK=null,lkOpen=null,usage=null,ths=new Set(),trash=new Map(),albs={},alb=null,vl=[],sc=1,tx=0,ty=0,favs=new Set(),view='all',qs='',sel=new Set(),cur=null;
 const api=(p,o={})=>fetch(p,{...o,headers:{Authorization:'Bearer '+T,...o.headers}});
 const post=(p,b)=>api(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
-const src=n=>`/api/file?name=${encodeURIComponent(n)}&t=${T}`,vid=n=>/\.(mp4|mov|webm|mkv)$/i.test(n),ts=n=>new Date(+n.split('_')[0]);
+const src=n=>`/api/file?name=${encodeURIComponent(n).replace(/'/g,'%27')}&t=${T}`,vid=n=>/\.(mp4|mov|webm|mkv|avi|3gp|m4v|mpe?g)$/i.test(n),ts=n=>{const m=/(?:^|__)(\d{12,13})_/.exec(n);return new Date(m?+m[1]:times[n]||0)};
 let tt;const toast=(m,keep)=>{const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(tt);if(!keep)tt=setTimeout(()=>t.style.display='none',3200)};
 const NAV=[['all','Photos'],['alb','Albums'],['fav','Favorites'],['vid','Videos'],['trash','Trash'],['bk','Backup']];
 $('#side').innerHTML=$('#bn').innerHTML=NAV.map(([v,l])=>`<button data-v="${v}">${l}</button>`).join('');
@@ -55,7 +55,7 @@ $$('#side button,#bn button').forEach(b=>b.onclick=()=>{view=b.dataset.v;alb=nul
 async function auth(m){const r=await fetch('/api/auth/'+m,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({u:$('#u').value,p:$('#p').value})}),j=await r.json().catch(()=>({error:'Server problem ('+r.status+'). It may be waking up, try again in a minute.'}));
  if(!r.ok)return $('#err').textContent=j.error;T=localStorage.t=j.t;localStorage.u=j.u;start()}
 $('#li').onclick=()=>auth('login');$('#su').onclick=()=>auth('signup');$('#out').onclick=async()=>{try{await MS?.configure({url:'',token:'',on:false})}catch{}localStorage.clear();location.reload()};
-async function load(){const r=await api('/api/photos');if(r.status==401){localStorage.clear();return location.reload()}if(!r.ok){const e=await r.json().catch(()=>({}));if(!items.length)$('#pg').innerHTML=`<div class="pad"><div class="card">${esc(e.error||'Could not load your photos right now.')}</div></div>`;return toast(e.error||'Could not load your photos')}const j=await r.json();items=j.items;apps=j.apps||[];favs=new Set(j.favs);ths=new Set(j.th||[]);trash=new Map((j.trash||[]).map(t=>[t.n,t.at]));albs=j.albums||{};locked=j.locked||[];lth=new Set(j.lth||[]);render();backfill()}
+async function load(){const r=await api('/api/photos');if(r.status==401){const k=prompt('Enter your access key');if(k){localStorage.k=k;location.reload()}return}if(!r.ok){const e=await r.json().catch(()=>({}));if(!items.length)$('#pg').innerHTML=`<div class="pad"><div class="card">${esc(e.error||'Could not load your photos right now.')}</div></div>`;return toast(e.error||'Could not load your photos')}const j=await r.json();items=j.items;apps=j.apps||[];favs=new Set(j.favs);ths=new Set(j.th||[]);trash=new Map((j.trash||[]).map(t=>[t.n,t.at]));times=j.times||{};albs=j.albums||{};locked=j.locked||[];lth=new Set(j.lth||[]);render();backfill()}
 const lab=d=>d==new Date().toDateString()?'Today':d==new Date(Date.now()-864e5).toDateString()?'Yesterday':d;
 function bar(){$('#sel').hidden=!sel.size;$('#cnt').textContent=sel.size+' selected';const t=view=='trash';$('#sf').textContent=t?'Restore':'★';$('#sr').textContent=t?'Delete forever':'Trash';$('#ss').hidden=$('#sa').hidden=$('#sl').hidden=t;$('#sm').hidden=!(view=='alb'&&alb)}
 function tog(n){sel.has(n)?sel.delete(n):sel.add(n);$$('.t').forEach(t=>t.classList.toggle('sel',sel.has(t.dataset.n)));bar()}
@@ -143,6 +143,6 @@ $('#sn').onclick=async()=>{await cfg();syncNow()};
 $('#la').onclick=async()=>{const {apps:l}=await MS.apps();$('#apps').innerHTML=l.sort((a,b)=>a.label.localeCompare(b.label)).map(a=>`<div class="row"><span>${esc(a.label)}<br><span class="dim">${(a.size/1e6).toFixed(0)} MB</span></span><button class="ib" data-p="${esc(a.pkg)}">↑</button></div>`).join('');$$('#apps button').forEach(b=>b.onclick=async()=>{b.textContent='…';try{await MS.backupApp({pkg:b.dataset.p});b.textContent='✓';load()}catch(e){b.textContent='!';toast(e.message||'Backup failed')}})};
 async function checkVersion(){const A=window.Capacitor?.Plugins?.App;if(!A)return;try{const [i,v]=[await A.getInfo(),await (await fetch('/api/version')).json()];
  if(+i.build<v.minNative){$('#upd').style.display='block';$('#upd').innerHTML=`New app version needed. <a href="${v.apk}">Download and reinstall</a>, then log in to get everything back.`}}catch{}}
-function start(){$('#auth').hidden=true;$('#app').hidden=false;$('#out').textContent=(localStorage.u||'?')[0].toUpperCase();load();native()}
-checkVersion();T?start():$('#auth').hidden=false;
+function start(){$('#auth').hidden=true;$('#app').hidden=false;$('#out').hidden=true;load();native()}
+checkVersion();start();
 </script></body></html>
