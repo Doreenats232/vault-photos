@@ -15,7 +15,9 @@ const auth = (q, r, n) => { const u = check((q.headers.authorization || '').slic
 let cool = 0;
 const put = async (name, buf, tries = 3) => { for (let i = 0; ; i++) { const f = new FormData(); f.append('file', new Blob([buf]), name); const x = await V('/v1/upload', { method: 'POST', body: f }); if (x.status === 429) cool = Date.now() + 300000; if ((x.status !== 429 && x.status < 500) || i >= tries - 1) return x; await new Promise(z => setTimeout(z, +(process.env.RETRY_MS || 2000) * (i + 1))); } };
 const items = j => (Array.isArray(j) ? j : Object.values(j || {}).find(Array.isArray) || []).map(x => typeof x === 'string' ? x : x.name || x.server_filename || x.path || '').map(x => x.split('/').pop()).filter(Boolean);
-const link = async (path, ttl = 600) => (await (await V('/v1/fs/sign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, ttl }) })).json()).url;
+const linkRaw = async (path, ttl = 600) => (await (await V('/v1/fs/sign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, ttl }) })).json()).url;
+const lc = new Map();
+const link = async (path, ttl = 600) => { const k = path + '|' + ttl, h = lc.get(k); if (h && h.exp > Date.now()) return h.url; const url = await linkRaw(path, ttl); if (url) { if (lc.size > 2000) lc.clear(); lc.set(k, { url, exp: Date.now() + Math.max(30, ttl - 120) * 1000 }); } return url; };
 const hash = (p, s) => crypto.scryptSync(p, s, 32).toString('hex');
 
 app.post('/api/auth/:mode', async (q, r) => {
