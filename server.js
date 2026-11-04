@@ -6,7 +6,7 @@ const { VAULT_URL, VAULT_KEY, SECRET = 'change-me', MIN_NATIVE = '1', APK_URL = 
 const app = express(), up = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100e6 } });
 app.use(express.json());
 process.on('unhandledRejection', e => console.error(e));
-for (const m of ['get', 'post']) { const o = app[m].bind(app); app[m] = (p, ...h) => o(p, ...h.map(f => f.constructor.name === 'AsyncFunction' ? (q, r, n) => f(q, r, n).catch(e => { console.error(e); r.status(500).json({ error: String(e.message || e) }); }) : f)); }
+for (const m of ['get', 'post', 'put']) { const o = app[m].bind(app); app[m] = (p, ...h) => o(p, ...h.map(f => f.constructor.name === 'AsyncFunction' ? (q, r, n) => f(q, r, n).catch(e => { console.error(e); r.status(500).json({ error: String(e.message || e) }); }) : f)); }
 const V = (p, o = {}) => fetch(VAULT_URL + p, { ...o, headers: { 'X-Api-Key': VAULT_KEY, ...o.headers } });
 const sig = b => crypto.createHmac('sha256', SECRET).update(b).digest('base64url');
 const mint = u => { const b = Buffer.from(u).toString('base64url'); return b + '.' + sig(b); };
@@ -80,6 +80,14 @@ app.post('/api/album', auth, async (q, r) => {
   for (const n of (q.body.names || []).map(nm)) { const p = `${q.u}__al__${a}__${n}`, x = q.body.on ? await put(p, Buffer.from('1')) : await del(p); if (!x.ok) return r.status(502).json({ error: 'Vault said ' + x.status }); }
   r.json({ ok: true });
 });
+app.post('/api/big/init', auth, async (q, r) => {
+  const safe = String(q.body.name || 'video').replace(/[^\w.\-]/g, '_'), taken = +q.body.taken > 0 ? +q.body.taken : Date.now();
+  const x = await V('/v1/fs/uploads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: `${q.u}__${taken}_${safe}`, size: +q.body.size }) });
+  const j = await x.json().catch(() => ({})); r.status(x.ok ? 200 : 502).json(x.ok ? j : { error: 'Vault said ' + x.status });
+});
+app.put('/api/big/:id/:i', auth, express.raw({ type: '*/*', limit: '64mb' }), async (q, r) => { const x = await V(`/v1/fs/uploads/${encodeURIComponent(q.params.id)}/${+q.params.i}`, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: q.body }); r.sendStatus(x.ok ? 200 : 502); });
+app.post('/api/big/:id/complete', auth, async (q, r) => { const x = await V(`/v1/fs/uploads/${encodeURIComponent(q.params.id)}/complete`, { method: 'POST' }); r.sendStatus(x.ok ? 200 : 502); });
+app.get('/api/big/:id', auth, async (q, r) => r.json(await (await V(`/v1/fs/uploads/${encodeURIComponent(q.params.id)}`)).json().catch(() => ({}))));
 app.get('/api/blob', auth, async (q, r) => { const url = await link(`${q.u}__${nm(q.query.name)}`); if (!url) return r.sendStatus(404); const x = await fetch(url); if (!x.ok) return r.sendStatus(502); r.type('application/octet-stream').send(Buffer.from(await x.arrayBuffer())); });
 app.get('/api/pin', auth, async (q, r) => { try { const url = await link(`__pin__${q.u}.json`), x = url ? await fetch(url) : null; r.json(x && x.ok ? await x.json() : {}); } catch { r.json({}); } });
 app.post('/api/pin', auth, async (q, r) => { const url = await link(`__pin__${q.u}.json`).catch(() => null); if (url && (await fetch(url).catch(() => ({ ok: false }))).ok) return r.status(409).json({ error: 'PIN already set' }); const w = await put(`__pin__${q.u}.json`, Buffer.from(JSON.stringify({ salt: String(q.body.salt), check: String(q.body.check) }))); r.status(w.ok ? 200 : 502).json({ ok: w.ok }); });
