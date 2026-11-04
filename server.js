@@ -12,8 +12,8 @@ const sig = b => crypto.createHmac('sha256', SECRET).update(b).digest('base64url
 const mint = u => { const b = Buffer.from(u).toString('base64url'); return b + '.' + sig(b); };
 const check = (t = '') => { const [b, s] = t.split('.'); return b && s === sig(b) ? Buffer.from(b, 'base64url').toString() : null; };
 const auth = (q, r, n) => { const u = check((q.headers.authorization || '').slice(7) || q.query.t); u ? (q.u = u, n()) : r.sendStatus(401); };
-let cool = 0;
-const put = async (name, buf, tries = 3) => { for (let i = 0; ; i++) { const f = new FormData(); f.append('file', new Blob([buf]), name); const x = await V('/v1/upload', { method: 'POST', body: f }); if (x.status === 429) cool = Date.now() + 300000; if ((x.status !== 429 && x.status < 500) || i >= tries - 1) return x; await new Promise(z => setTimeout(z, +(process.env.RETRY_MS || 2000) * (i + 1))); } };
+let cool = 0, lcache = null, goodVar = null;
+const put = async (name, buf, tries = 3) => { lcache = null; for (let i = 0; ; i++) { const f = new FormData(); f.append('file', new Blob([buf]), name); const x = await V('/v1/upload', { method: 'POST', body: f }); if (x.status === 429) cool = Date.now() + 300000; if ((x.status !== 429 && x.status < 500) || i >= tries - 1) return x; await new Promise(z => setTimeout(z, +(process.env.RETRY_MS || 2000) * (i + 1))); } };
 const items = j => (Array.isArray(j) ? j : Object.values(j || {}).find(Array.isArray) || []).map(x => typeof x === 'string' ? x : x.name || x.server_filename || x.path || '').map(x => x.split('/').pop()).filter(Boolean);
 const linkRaw = async (path, ttl = 600) => (await (await V('/v1/fs/sign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, ttl }) })).json()).url;
 const lc = new Map();
@@ -34,9 +34,9 @@ app.post('/api/auth/:mode', async (q, r) => {
   r.json({ t: mint(u), u });
 });
 app.get('/api/photos', auth, async (q, r) => {
-  const lx = await V('/v1/fs/list?dir='), j = await lx.json().catch(() => null);
-  if (!lx.ok || j === null) return r.status(503).json({ error: 'The vault is not answering right now (it may be blocking requests). Your photos are safe. Try again in a few minutes.' });
-  const m = items(j).filter(n => n.startsWith(q.u + '__')).map(n => n.slice(q.u.length + 2));
+  const all = await listCached();
+  if (all === null) return r.status(503).json({ error: 'The vault is not answering right now (it may be blocking requests). Your photos are safe. Try again in a few minutes.' });
+  const m = all.filter(n => n.startsWith(q.u + '__')).map(n => n.slice(q.u.length + 2));
   const trash = m.map(n => /^tr__(\d+)__(.+)$/.exec(n)).filter(Boolean).map(x => ({ n: x[2], at: +x[1] })), albums = {};
   m.forEach(n => { const x = /^al__(.+?)__(.+)$/.exec(n); if (x) (albums[x[1]] = albums[x[1]] || []).push(x[2]); });
   r.json({ locked: m.filter(n => /^lk__(?!th__)/.test(n)).map(n => n.slice(4)), lth: m.filter(n => n.startsWith('lk__th__')).map(n => n.slice(8)), items: m.filter(n => !/^(fav|app|th|tr|al|lk)__/.test(n)), apps: m.filter(n => n.startsWith('app__')), favs: m.filter(n => n.startsWith('fav__')).map(n => n.slice(5)), th: m.filter(n => n.startsWith('th__')).map(n => n.slice(4)), trash, albums });
@@ -55,7 +55,7 @@ app.get('/api/file', auth, async (q, r) => {
   url ? r.redirect(url) : r.sendStatus(404);
 });
 const nm = n => String(n).replace(/[\/\\]/g, '');
-const del = path => V('/v1/fs/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }) });
+const del = path => { lcache = null; return V('/v1/fs/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }) }); };
 app.post('/api/fav', auth, async (q, r) => {
   for (const n of (q.body.names || []).map(nm)) { const p = `${q.u}__fav__${n}`, x = q.body.on ? await put(p, Buffer.from('1')) : await del(p); if (!x.ok) return r.status(502).json({ error: 'Vault said ' + x.status }); }
   r.json({ ok: true });
@@ -68,7 +68,24 @@ app.post('/api/delete', auth, async (q, r) => {
 app.post('/api/share', auth, async (q, r) => { const url = await link(`${q.u}__${nm(q.body.name)}`, 86400); url ? r.json({ url }) : r.status(502).json({ error: 'Could not create link' }); });
 const IMG = /\.(jpe?g|png|webp|gif|bmp|avif|tiff?)$/i, bad = new Set();
 const thumb = async b => { if (!sharp) throw new Error('sharp unavailable'); return sharp(b).rotate().resize(480, 480, { fit: 'inside' }).jpeg({ quality: 72 }).toBuffer(); };
-const ls = async () => items(await (await V('/v1/fs/list?dir=')).json().catch(() => []));
+const VARS = [p => `page=${p}`, p => `offset=${(p - 1) * 100}`, p => `start=${(p - 1) * 100}`, p => `skip=${(p - 1) * 100}`];
+async function listAll() {
+  const get = async q => { const x = await V('/v1/fs/list?dir=' + q); const j = x.ok ? await x.json().catch(() => null) : null; return j === null ? null : items(j); };
+  const a = await get(''); if (a === null) return null;
+  const seen = new Set(a), out = [...a]; if (a.length < 100) return out;
+  for (const v of goodVar === null ? VARS.map((_, i) => i) : [goodVar]) {
+    for (let p = 2; p <= 60; p++) {
+      const b = await get('&' + VARS[v](p)); if (!b) break;
+      const fresh = b.filter(n => !seen.has(n)); if (!fresh.length) break;
+      goodVar = v; fresh.forEach(n => seen.add(n)); out.push(...fresh);
+      if (b.length < 100) return out;
+    }
+    if (goodVar !== null) return out;
+  }
+  return out;
+}
+const listCached = async () => { if (lcache && Date.now() - lcache.at < 15000) return lcache.data; const d = await listAll(); if (d) lcache = { at: Date.now(), data: d }; return d; };
+const ls = async () => (await listCached()) || [];
 const purgeAll = async (u, n, m) => { for (const p of ['th__' + n, 'fav__' + n, ...m.filter(x => /^(tr|al)__/.test(x) && x.endsWith('__' + n))]) await del(`${u}__${p}`); };
 const albName = s => String(s).replace(/[^\w\- ]+/g, '').replace(/_+/g, '_').replace(/ +/g, '-').slice(0, 40);
 app.post('/api/trash', auth, async (q, r) => {
@@ -103,7 +120,7 @@ app.get('/api/backfill', auth, async (q, r) => {
   for (const n of miss.slice(0, 2)) { try { const b = Buffer.from(await (await fetch(await link(`${q.u}__${n}`))).arrayBuffer()); await put(`${q.u}__th__${n}`, await thumb(b)); done.push(n); } catch (e) { bad.add(q.u + n); } }
   r.json({ done, left: miss.length - done.length });
 });
-app.get('/api/health', async (q, r) => { const o = { VAULT_URL: !!VAULT_URL, VAULT_KEY: !!VAULT_KEY, SECRET: SECRET !== 'change-me' }; try { const x = await V('/v1/fs/list?dir='); o.vault = x.status; const j = await x.json().catch(() => null); o.shape = Array.isArray(j) ? 'array:' + j.length : j && typeof j === 'object' ? Object.keys(j) : String(j); o.count = items(j).length; } catch (e) { o.vault = String(e.message); } r.json(o); });
+app.get('/api/health', async (q, r) => { const o = { VAULT_URL: !!VAULT_URL, VAULT_KEY: !!VAULT_KEY, SECRET: SECRET !== 'change-me' }; try { const x = await V('/v1/fs/list?dir='); o.vault = x.status; const j = await x.json().catch(() => null); o.shape = Array.isArray(j) ? 'array:' + j.length : j && typeof j === 'object' ? Object.keys(j) : String(j); o.count = items(j).length; const al = await listAll(); o.total = al ? al.length : null; o.pager = goodVar === null ? 'none' : ['page', 'offset', 'start', 'skip'][goodVar]; } catch (e) { o.vault = String(e.message); } r.json(o); });
 app.get('/api/version', (q, r) => r.json({ minNative: +MIN_NATIVE, apk: APK_URL }));
 app.use(express.static('public'));
 app.listen(PORT);
