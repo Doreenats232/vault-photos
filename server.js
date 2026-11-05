@@ -23,12 +23,13 @@ const lc = new Map();
 const link = async (path, ttl = 600) => { const k = path + '|' + ttl, h = lc.get(k); if (h && h.exp > Date.now()) return h.url; const url = await linkRaw(path, ttl); if (url) { if (lc.size > 2000) lc.clear(); lc.set(k, { url, exp: Date.now() + Math.max(30, ttl - 120) * 1000 }); } return url; };
 const thumb = async b => { if (!sharp) throw new Error('sharp unavailable'); return sharp(b).rotate().resize(480, 480, { fit: 'inside' }).jpeg({ quality: 72 }).toBuffer(); };
 
-const ent = (j, d) => (Array.isArray(j) ? j : Object.values(j || {}).find(Array.isArray) || []).map(x => {
+const arrOf = (j, ks) => { for (const k of ks) if (j && Array.isArray(j[k])) return j[k]; return null; };
+const ent = (j, d) => { let fl = Array.isArray(j) ? j : arrOf(j, ['files', 'items', 'entries', 'list', 'data']), fo = []; if (!fl) fl = Object.values(j || {}).find(Array.isArray) || []; else if (!Array.isArray(j)) fo = (arrOf(j, ['folders', 'folder', 'dirs', 'directories', 'subfolders']) || []).map(x => typeof x === 'string' ? { name: x.split('/').pop(), isdir: 1 } : { ...x, isdir: 1 }); return [...fl, ...fo].map(x => {
   if (typeof x === 'string') x = { name: x };
   const name = x.name || x.server_filename || String(x.path || '').split('/').pop(); if (!name || name === '.' || name === '..') return null;
   const t = +(x.mtime || x.server_mtime || x.modified || x.updatedAt || x.updated || x.time || 0);
-  return { path: (d ? d + '/' : '') + name, isDir: !!(x.isdir || x.is_dir || x.isDir || x.type === 'dir' || x.type === 'folder'), t: t && t < 1e12 ? t * 1000 : t };
-}).filter(Boolean);
+  return { path: (d ? d + '/' : '') + name, isDir: !!(x.isdir || x.is_dir || x.isDir || x.type === 'dir' || x.type === 'folder' || x.type === 'directory' || x.is_folder), t: t && t < 1e12 ? t * 1000 : t };
+}).filter(Boolean); };
 const VARS = [p => `page=${p}`, p => `offset=${(p - 1) * 100}`, p => `start=${(p - 1) * 100}`, p => `skip=${(p - 1) * 100}`];
 async function listDir(d, depth = 0) {
   const base = '/v1/fs/list?dir=' + encodeURIComponent(d);
@@ -61,7 +62,7 @@ app.get('/api/photos', auth, async (q, r) => {
   const trash = m.map(n => /^tr__(\d+)__(.+)$/.exec(n)).filter(Boolean).map(x => ({ n: D(x[2]), at: +x[1] })), albums = {}, times = {};
   m.forEach(n => { const x = /^al__(.+?)__(.+)$/.exec(n); if (x) (albums[x[1]] = albums[x[1]] || []).push(D(x[2])); });
   f.forEach(x => { if (x.t && !MARK.test(x.id) && !/^\d{12,13}_/.test(x.id)) times[x.id] = x.t; });
-  r.json({ items: m.filter(n => !MARK.test(n) && MEDIA.test(n)), apps: m.filter(n => n.startsWith('app__')), favs: m.filter(n => n.startsWith('fav__')).map(n => D(n.slice(5))), th: m.filter(n => n.startsWith('th__')).map(n => D(n.slice(4))), locked: m.filter(n => /^lk__(?!th__)/.test(n)).map(n => n.slice(4)), lth: m.filter(n => n.startsWith('lk__th__')).map(n => n.slice(8)), trash, albums, times });
+  r.json({ dbg: { files: f.length, dirs: all.filter(e => e.isDir).length, ignored: f.filter(x => !x.id.startsWith('__') && !MARK.test(x.id) && !MEDIA.test(x.id)).slice(0, 8).map(x => x.id) }, items: m.filter(n => !MARK.test(n) && MEDIA.test(n)), apps: m.filter(n => n.startsWith('app__')), favs: m.filter(n => n.startsWith('fav__')).map(n => D(n.slice(5))), th: m.filter(n => n.startsWith('th__')).map(n => D(n.slice(4))), locked: m.filter(n => /^lk__(?!th__)/.test(n)).map(n => n.slice(4)), lth: m.filter(n => n.startsWith('lk__th__')).map(n => n.slice(8)), trash, albums, times });
   trash.filter(t => t.at < Date.now() - 30 * 864e5).forEach(t => del(R(t.n)).then(() => purgeAll(t.n, m)).catch(() => {}));
 });
 app.post('/api/upload', auth, up.single('file'), async (q, r) => {
@@ -124,7 +125,7 @@ app.get('/api/health', async (q, r) => {
   try {
     const x = await V('/v1/fs/list?dir='); o.vault = x.status; const j = await x.json().catch(() => null);
     o.shape = Array.isArray(j) ? 'array:' + j.length : j && typeof j === 'object' ? Object.keys(j) : String(j);
-    const a = Array.isArray(j) ? j : Object.values(j || {}).find(Array.isArray) || []; o.first = a[0] && typeof a[0] === 'object' ? Object.keys(a[0]) : typeof a[0];
+    const a = Array.isArray(j) ? j : Object.values(j || {}).find(Array.isArray) || []; o.dir = j && j.dir; o.folder = j && (typeof j.folder === 'string' ? j.folder : typeof j.folder); o.first = a[0] && typeof a[0] === 'object' ? Object.keys(a[0]) : typeof a[0];
     const al = await listAll(); o.total = al ? al.length : null; o.dirs = al ? al.filter(e => e.isDir).length : null; o.pager = goodVar === null ? 'none' : ['page', 'offset', 'start', 'skip'][goodVar];
   } catch (e) { o.vault = String(e.message); }
   r.json(o);
