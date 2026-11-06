@@ -6,7 +6,14 @@ const app = express(), up = multer({ storage: multer.memoryStorage(), limits: { 
 app.use(express.json());
 process.on('unhandledRejection', e => console.error(e));
 for (const m of ['get', 'post', 'put']) { const o = app[m].bind(app); app[m] = (p, ...h) => o(p, ...h.map(f => f.constructor.name === 'AsyncFunction' ? (q, r, n) => f(q, r, n).catch(e => { console.error(e); r.status(500).json({ error: String(e.message || e) }); }) : f)); }
-const V = (p, o = {}) => fetch(VAULT_URL + p, { ...o, headers: { 'X-Api-Key': VAULT_KEY, ...o.headers } });
+let blockedUntil = 0, backoff = 0, lastGood = null, active = 0; const waiters = [];
+const V = async (p, o = {}) => {
+  if (Date.now() < blockedUntil) return new Response('paused', { status: 429 });
+  const x = await fetch(VAULT_URL + p, { ...o, headers: { 'X-Api-Key': VAULT_KEY, ...o.headers } });
+  if (x.status === 429) { backoff = Math.min(backoff ? backoff * 2 : +(process.env.BACKOFF_MS || 600000), 7200000); blockedUntil = Date.now() + backoff; } else if (x.ok) backoff = 0;
+  return x;
+};
+const slot = async fn => { while (active >= 3) await new Promise(z => waiters.push(z)); active++; try { return await fn(); } finally { active--; const w = waiters.shift(); if (w) w(); } };
 const JH = { 'Content-Type': 'application/json' };
 const auth = (q, r, n) => (!ACCESS_KEY || (q.headers.authorization || '').slice(7) === ACCESS_KEY || q.query.t === ACCESS_KEY) ? n() : r.sendStatus(401);
 
@@ -18,7 +25,7 @@ const safe = s => String(s).replace(/[^\w.\-]/g, '_'), nm = n => String(n).repla
 
 const put = async (name, buf, tries = 3) => { lcache = null; for (let i = 0; ; i++) { const f = new FormData(); f.append('file', new Blob([buf]), name); const x = await V('/v1/upload', { method: 'POST', body: f }); if (x.status === 429) cool = Date.now() + 300000; if ((x.status !== 429 && x.status < 500) || i >= tries - 1) return x; await new Promise(z => setTimeout(z, +(process.env.RETRY_MS || 2000) * (i + 1))); } };
 const del = path => { lcache = null; return V('/v1/fs/delete', { method: 'POST', headers: JH, body: JSON.stringify({ path }) }); };
-const linkRaw = async (path, ttl = 600) => (await (await V('/v1/fs/sign', { method: 'POST', headers: JH, body: JSON.stringify({ path, ttl }) })).json()).url;
+const linkRaw = (path, ttl = 600) => slot(async () => { const url = (await (await V('/v1/fs/sign', { method: 'POST', headers: JH, body: JSON.stringify({ path, ttl }) })).json()).url; await new Promise(z => setTimeout(z, 120)); return url; });
 const lc = new Map();
 const link = async (path, ttl = 600) => { const k = path + '|' + ttl, h = lc.get(k); if (h && h.exp > Date.now()) return h.url; const url = await linkRaw(path, ttl); if (url) { if (lc.size > 2000) lc.clear(); lc.set(k, { url, exp: Date.now() + Math.max(30, ttl - 120) * 1000 }); } return url; };
 const thumb = async b => { if (!sharp) throw new Error('sharp unavailable'); return sharp(b).rotate().resize(480, 480, { fit: 'inside' }).jpeg({ quality: 72 }).toBuffer(); };
@@ -51,7 +58,9 @@ async function listDir(d, depth = 0) {
   return out;
 }
 async function listAll() { const out = await listDir(''); if (out) real = new Map(out.filter(e => !e.isDir).map(e => [strip(e.path), e.path])); return out; }
-const listCached = async () => { if (lcache && Date.now() - lcache.at < 15000) return lcache.data; const d = await listAll(); if (d) lcache = { at: Date.now(), data: d }; return d; };
+let inflight = null;
+const refresh = () => inflight || (inflight = listAll().then(d => { if (d) { lcache = { at: Date.now(), data: d }; lastGood = d; } return d; }).finally(() => { inflight = null; }));
+const listCached = async () => { const age = lcache ? Date.now() - lcache.at : Infinity; if (age < 60000) return lcache.data; if (age < 600000) { refresh().catch(() => {}); return lcache.data; } return (await refresh()) || lastGood; };
 const ids = async () => ((await listCached()) || []).filter(e => !e.isDir).map(e => strip(e.path)).filter(n => !n.startsWith('__'));
 const purgeAll = async (n, m) => { for (const p of ['th__' + E(n), 'fav__' + E(n), ...m.filter(x => /^(tr|al)__/.test(x) && x.endsWith('__' + E(n)))]) await del(R(p)); };
 
@@ -128,6 +137,7 @@ app.get('/api/health', async (q, r) => {
     const a = Array.isArray(j) ? j : Object.values(j || {}).find(Array.isArray) || []; o.dir = j && j.dir; o.folder = j && (typeof j.folder === 'string' ? j.folder : typeof j.folder); o.first = a[0] && typeof a[0] === 'object' ? Object.keys(a[0]) : typeof a[0];
     const al = await listAll(); o.total = al ? al.length : null; o.dirs = al ? al.filter(e => e.isDir).length : null; o.pager = goodVar === null ? 'none' : ['page', 'offset', 'start', 'skip'][goodVar];
   } catch (e) { o.vault = String(e.message); }
+  o.pausedForSeconds = Math.max(0, Math.round((blockedUntil - Date.now()) / 1000));
   r.json(o);
 });
 app.get('/api/version', (q, r) => r.json({ minNative: +MIN_NATIVE, apk: APK_URL }));
