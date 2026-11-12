@@ -40,7 +40,7 @@ const ent = (j, d) => { let fl = Array.isArray(j) ? j : arrOf(j, ['files', 'item
 const VARS = [p => `page=${p}`, p => `offset=${(p - 1) * 100}`, p => `start=${(p - 1) * 100}`, p => `skip=${(p - 1) * 100}`];
 async function listDir(d, depth = 0) {
   const base = '/v1/fs/list?dir=' + encodeURIComponent(d);
-  const get = async q => { const x = await V(base + q); const j = x.ok ? await x.json().catch(() => null) : null; return j === null ? null : ent(j, d); };
+  const get = async q => { const x = await V(base + q); if (!x.ok) lastErr = x.status + ' ' + (await x.clone().text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 150); const j = x.ok ? await x.json().catch(() => null) : null; return j === null ? null : ent(j, d); };
   const a = await get(''); if (a === null) return null;
   const seen = new Set(a.map(e => e.path)), out = [...a];
   if (a.length >= 100) {
@@ -57,7 +57,7 @@ async function listDir(d, depth = 0) {
   if (depth < 3) for (const e of out.filter(e => e.isDir && !e.path.split('/').pop().startsWith('.') && !seenDirs.has(e.path)).slice(0, 40)) { seenDirs.add(e.path); const sub = await listDir(e.path, depth + 1); if (sub) out.push(...sub); }
   return out;
 }
-let seenDirs = new Set();
+let seenDirs = new Set(), lastErr = '';
 async function listAll() { seenDirs = new Set(); const out = await listDir(''); if (out) real = new Map(out.filter(e => !e.isDir).map(e => [strip(e.path), e.path])); return out; }
 let inflight = null;
 const refresh = () => inflight || (inflight = listAll().then(d => { if (d) { lcache = { at: Date.now(), data: d }; lastGood = d; } return d; }).finally(() => { inflight = null; }));
@@ -67,7 +67,7 @@ const purgeAll = async (n, m) => { for (const p of ['th__' + E(n), 'fav__' + E(n
 
 app.get('/api/photos', auth, async (q, r) => {
   const all = await listCached();
-  if (all === null) return r.status(503).json({ error: 'The vault is not answering right now (it may be blocking requests). Your photos are safe. Try again in a few minutes.' });
+  if (all === null) return r.status(503).json({ error: 'The vault is not answering right now (it may be blocking requests). Your photos are safe. Try again in a few minutes.' + (lastErr ? ' [Vault replied: ' + lastErr + ']' : '') });
   const f = all.filter(e => !e.isDir).map(e => ({ id: strip(e.path), t: e.t })).filter(x => !x.id.startsWith('__')), m = f.map(x => x.id);
   const trash = m.map(n => /^tr__(\d+)__(.+)$/.exec(n)).filter(Boolean).map(x => ({ n: D(x[2]), at: +x[1] })), albums = {}, times = {};
   m.forEach(n => { const x = /^al__(.+?)__(.+)$/.exec(n); if (x) (albums[x[1]] = albums[x[1]] || []).push(D(x[2])); });
@@ -138,7 +138,7 @@ app.get('/api/health', async (q, r) => {
     const a = Array.isArray(j) ? j : Object.values(j || {}).find(Array.isArray) || []; o.dir = j && j.dir; o.folder = j && (typeof j.folder === 'string' ? j.folder : typeof j.folder); o.first = a[0] && typeof a[0] === 'object' ? Object.keys(a[0]) : typeof a[0];
     const al = await listAll(); o.total = al ? al.length : null; o.dirs = al ? al.filter(e => e.isDir).length : null; o.pager = goodVar === null ? 'none' : ['page', 'offset', 'start', 'skip'][goodVar];
   } catch (e) { o.vault = String(e.message); }
-  o.pausedForSeconds = Math.max(0, Math.round((blockedUntil - Date.now()) / 1000));
+  o.lastErr = lastErr; o.vaultUrlHost = (VAULT_URL || '').replace(/^https?:\/\//, '').split('/')[0]; o.pausedForSeconds = Math.max(0, Math.round((blockedUntil - Date.now()) / 1000));
   r.json(o);
 });
 app.get('/api/version', (q, r) => r.json({ minNative: +MIN_NATIVE, apk: APK_URL }));
