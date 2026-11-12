@@ -54,7 +54,7 @@ async function listDir(d, depth = 0) {
       if (goodVar !== null) break;
     }
   }
-  if (depth < 3) for (const e of out.filter(e => e.isDir && !e.path.split('/').pop().startsWith('.')).slice(0, 40)) { const sub = await listDir(e.path, depth + 1); if (sub) out.push(...sub); }
+  if (depth < 8) for (const e of out.filter(e => e.isDir && !e.path.split('/').pop().startsWith('.')).slice(0, 200)) { const sub = await listDir(e.path, depth + 1); if (sub) out.push(...sub); }
   return out;
 }
 async function listAll() { const out = await listDir(''); if (out) real = new Map(out.filter(e => !e.isDir).map(e => [strip(e.path), e.path])); return out; }
@@ -71,7 +71,7 @@ app.get('/api/photos', auth, async (q, r) => {
   const trash = m.map(n => /^tr__(\d+)__(.+)$/.exec(n)).filter(Boolean).map(x => ({ n: D(x[2]), at: +x[1] })), albums = {}, times = {};
   m.forEach(n => { const x = /^al__(.+?)__(.+)$/.exec(n); if (x) (albums[x[1]] = albums[x[1]] || []).push(D(x[2])); });
   f.forEach(x => { if (x.t && !MARK.test(x.id) && !/^\d{12,13}_/.test(x.id)) times[x.id] = x.t; });
-  r.json({ dbg: { files: f.length, dirs: all.filter(e => e.isDir).length, ignored: f.filter(x => !x.id.startsWith('__') && !MARK.test(x.id) && !MEDIA.test(x.id)).slice(0, 8).map(x => x.id) }, items: m.filter(n => !MARK.test(n) && MEDIA.test(n)), apps: m.filter(n => n.startsWith('app__')), favs: m.filter(n => n.startsWith('fav__')).map(n => D(n.slice(5))), th: m.filter(n => n.startsWith('th__')).map(n => D(n.slice(4))), locked: m.filter(n => /^lk__(?!th__)/.test(n)).map(n => n.slice(4)), lth: m.filter(n => n.startsWith('lk__th__')).map(n => n.slice(8)), trash, albums, times });
+  r.json({ dbg: { files: f.length, dirs: all.filter(e => e.isDir).length, ignored: [] }, items: m.filter(n => !MARK.test(n)), apps: m.filter(n => n.startsWith('app__')), favs: m.filter(n => n.startsWith('fav__')).map(n => D(n.slice(5))), th: m.filter(n => n.startsWith('th__')).map(n => D(n.slice(4))), locked: m.filter(n => /^lk__(?!th__)/.test(n)).map(n => n.slice(4)), lth: m.filter(n => n.startsWith('lk__th__')).map(n => n.slice(8)), trash, albums, times });
   trash.filter(t => t.at < Date.now() - 30 * 864e5).forEach(t => del(R(t.n)).then(() => purgeAll(t.n, m)).catch(() => {}));
 });
 app.post('/api/upload', auth, up.single('file'), async (q, r) => {
