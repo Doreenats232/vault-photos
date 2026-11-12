@@ -54,10 +54,11 @@ async function listDir(d, depth = 0) {
       if (goodVar !== null) break;
     }
   }
-  if (depth < 8) for (const e of out.filter(e => e.isDir && !e.path.split('/').pop().startsWith('.')).slice(0, 200)) { const sub = await listDir(e.path, depth + 1); if (sub) out.push(...sub); }
+  if (depth < 3) for (const e of out.filter(e => e.isDir && !e.path.split('/').pop().startsWith('.') && !seenDirs.has(e.path)).slice(0, 40)) { seenDirs.add(e.path); const sub = await listDir(e.path, depth + 1); if (sub) out.push(...sub); }
   return out;
 }
-async function listAll() { const out = await listDir(''); if (out) real = new Map(out.filter(e => !e.isDir).map(e => [strip(e.path), e.path])); return out; }
+let seenDirs = new Set();
+async function listAll() { seenDirs = new Set(); const out = await listDir(''); if (out) real = new Map(out.filter(e => !e.isDir).map(e => [strip(e.path), e.path])); return out; }
 let inflight = null;
 const refresh = () => inflight || (inflight = listAll().then(d => { if (d) { lcache = { at: Date.now(), data: d }; lastGood = d; } return d; }).finally(() => { inflight = null; }));
 const listCached = async () => { const age = lcache ? Date.now() - lcache.at : Infinity; if (age < 60000) return lcache.data; if (age < 600000) { refresh().catch(() => {}); return lcache.data; } return (await refresh()) || lastGood; };
