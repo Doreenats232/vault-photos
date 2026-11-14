@@ -76,8 +76,8 @@ app.get('/api/photos', auth, async (q, r) => {
   trash.filter(t => t.at < Date.now() - 30 * 864e5).forEach(t => del(R(t.n)).then(() => purgeAll(t.n, m)).catch(() => {}));
 });
 app.post('/api/upload', auth, up.single('file'), async (q, r) => {
-  const s = safe(q.file.originalname), taken = +q.body.taken > 0 ? +q.body.taken : Date.now(), kind = q.body.kind, name = kind === 'lock' ? s : `${taken}_${s}`;
-  const x = await put(`${({ app: 'app__', lock: 'lk__' })[kind] || ''}${name}`, q.file.buffer);
+  const s = safe(q.file.originalname), taken = +q.body.taken > 0 ? +q.body.taken : Date.now(), kind = q.body.kind, name = (kind === 'lock' || kind === 'th') ? s : `${taken}_${s}`;
+  const x = await put(`${({ app: 'app__', lock: 'lk__', th: 'th__' })[kind] || ''}${name}`, q.file.buffer);
   if (!x.ok) return r.status(502).json({ error: 'Vault said ' + x.status + ': ' + (await x.text()).slice(0, 150) });
   if (!kind && IMG.test(name) && Date.now() > cool) try { await put('th__' + name, await thumb(q.file.buffer)); } catch (e) { console.error('thumb', e.message); }
   r.json({ name });
