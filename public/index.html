@@ -102,7 +102,7 @@ async function upload(fs){fs=[...fs].filter(f=>/^(image|video)\//.test(f.type));
 $('#plus').onclick=$('#bu').onclick=()=>$('#f').click();$('#f').onchange=e=>{upload(e.target.files);e.target.value=''};
 addEventListener('dragover',e=>e.preventDefault());addEventListener('drop',e=>{e.preventDefault();upload(e.dataTransfer.files)});
 let qt;$('#q').oninput=e=>{clearTimeout(qt);qt=setTimeout(()=>{qs=e.target.value;render()},200)};
-const thumb=n=>ths.has(n)?src('th__'+n):src(n);
+const thumb=n=>ths.has(n)?src('th__'+n):`/api/thumb?name=${encodeURIComponent(n).replace(/'/g,'%27')}&t=${T}`;
 const trashIt=async ns=>{const r=await post('/api/trash',{names:ns,on:true});if(!r.ok)return toast('Could not move to trash');ns.forEach(n=>trash.set(n,Date.now()));sel.clear();close();render();toast('Moved to trash. You can restore it for 30 days.')};
 const restore=async ns=>{const r=await post('/api/trash',{names:ns,on:false});if(!r.ok)return toast('Could not restore');ns.forEach(n=>trash.delete(n));sel.clear();render();toast('Restored')};
 const sheet=h=>{$('#sheet>div').innerHTML=h;$('#sheet').style.display='flex'};$('#sheet').onclick=e=>{if(e.target.id=='sheet')e.target.style.display='none'};

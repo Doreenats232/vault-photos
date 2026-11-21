@@ -10,7 +10,7 @@ let blockedUntil = 0, backoff = 0, lastGood = null, active = 0; const waiters = 
 const V = async (p, o = {}) => {
   if (Date.now() < blockedUntil) return new Response('paused', { status: 429 });
   const x = await fetch(VAULT_URL + p, { ...o, headers: { 'X-Api-Key': VAULT_KEY, ...o.headers } });
-  if (x.status === 429) { backoff = Math.min(backoff ? backoff * 2 : +(process.env.BACKOFF_MS || 600000), 7200000); blockedUntil = Date.now() + backoff; } else if (x.ok) backoff = 0;
+  if (x.status === 429) { backoff = Math.min(backoff ? backoff * 2 : +(process.env.BACKOFF_MS || 20000), 300000); blockedUntil = Date.now() + backoff; } else if (x.ok) backoff = 0;
   return x;
 };
 const slot = async fn => { while (active >= 3) await new Promise(z => waiters.push(z)); active++; try { return await fn(); } finally { active--; const w = waiters.shift(); if (w) w(); } };
@@ -81,6 +81,23 @@ app.post('/api/upload', auth, up.single('file'), async (q, r) => {
   if (!x.ok) return r.status(502).json({ error: 'Vault said ' + x.status + ': ' + (await x.text()).slice(0, 150) });
   if (!kind && IMG.test(name) && Date.now() > cool) try { await put('th__' + name, await thumb(q.file.buffer)); } catch (e) { console.error('thumb', e.message); }
   r.json({ name });
+});
+// Grid tiles ask for this instead of the full original: a small JPEG is made once, kept in memory, and saved to the vault as th__ so every later load is tiny.
+const tcache = new Map(), tjobs = new Map(), saved = new Set(), twait = []; let tact = 0;
+const tslot = async fn => { while (tact >= 3) await new Promise(z => twait.push(z)); tact++; try { return await fn(); } finally { tact--; const w = twait.shift(); if (w) w(); } };
+app.get('/api/thumb', auth, async (q, r) => {
+  const n = nm(q.query.name), tk = encodeURIComponent(q.query.t || ''), orig = () => r.redirect(`/api/file?name=${encodeURIComponent(n)}&t=${tk}`), sv = 'th__' + E(n);
+  if (!IMG.test(n) || MARK.test(n) || !sharp) return orig();
+  if (real.has(sv) || saved.has(n)) return r.redirect(`/api/file?name=${encodeURIComponent(sv)}&t=${tk}`);
+  const send = b => r.set('Cache-Control', 'public, max-age=86400').type('image/jpeg').send(b);
+  if (tcache.has(n)) return send(tcache.get(n));
+  if (!tjobs.has(n)) tjobs.set(n, tslot(async () => {
+    const t = await thumb(Buffer.from(await (await fetch(await link(R(n)))).arrayBuffer()));
+    tcache.set(n, t); if (tcache.size > 300) tcache.delete(tcache.keys().next().value);
+    if (Date.now() > cool) put(sv, t).then(x => { if (x.ok) saved.add(n); }).catch(() => {});
+    return t;
+  }).finally(() => tjobs.delete(n)));
+  try { send(await tjobs.get(n)); } catch (e) { orig(); }
 });
 app.get('/api/file', auth, async (q, r) => { const url = await link(R(nm(q.query.name))); url ? r.redirect(url) : r.sendStatus(404); });
 app.get('/api/blob', auth, async (q, r) => { const url = await link(R(nm(q.query.name))); if (!url) return r.sendStatus(404); const x = await fetch(url); if (!x.ok) return r.sendStatus(502); r.type('application/octet-stream').send(Buffer.from(await x.arrayBuffer())); });
